@@ -1,10 +1,11 @@
-.PHONY: help dev test build contract-deploy db-migrate db-reset clean dep-graph
+.PHONY: help dev test build contract-deploy db-migrate db-reset clean dep-graph watch-contracts
 
 help:
 	@echo "Available targets:"
 	@echo "  dev             - Start Postgres, API, and Web dev servers concurrently"
 	@echo "  test            - Run npm and cargo tests"
 	@echo "  build           - Build npm workspaces and cargo workspace"
+	@echo "  watch-contracts - Hot reload contract tests on file changes (cargo watch -x test)"
 	@echo "  contract-deploy - Deploy the Soroban contract"
 	@echo "  db-migrate      - Run database migrations"
 	@echo "  db-reset        - Drop/recreate DB, run migrations, and seed data"
@@ -24,6 +25,9 @@ test:
 build:
 	npm run build
 	cd contracts && cargo build --release --target wasm32-unknown-unknown
+
+watch-contracts:
+	npm run watch:contracts
 
 contract-deploy:
 	soroban contract deploy \
