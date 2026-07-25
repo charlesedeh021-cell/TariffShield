@@ -527,7 +527,7 @@ export async function migrate(): Promise<void> {
     undefined,
     "migrate_schema",
   );
-  console.log("[migrate] schema ready");
+  logger.info("schema ready");
 }
 
 export async function getLastProcessedLedger(): Promise<number | null> {

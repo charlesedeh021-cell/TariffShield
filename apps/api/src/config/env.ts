@@ -23,6 +23,7 @@ export const Env = z.object({
   CBP_VALIDATION_MODE: z.enum(["warn", "block"]).default("block").describe("CBP lookup failure mode"),
   ORACLE_ALERT_THRESHOLD_PCT: z.coerce.number().default(50).describe("Alert threshold for collateral change"),
   ALERT_CHANNEL: z.string().default("console").describe("Alert channel for oracle monitor"),
+  LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info").describe("Log level for pino logger"),
 
   // #332 / #334 — price oracle and emergency admin secrets
   PRICE_ORACLE_CONTRACT_ID: z.string().startsWith("C").min(56).optional().describe("Soroban contract ID for the USDC/USD price oracle"),

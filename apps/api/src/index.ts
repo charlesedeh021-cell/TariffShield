@@ -29,8 +29,10 @@ import { startComplianceReportScheduler } from "./jobs/compliance-report.js";
 import { suretyLicenseRouter } from "./routes/surety-license.js";
 import { regulatoryRouter } from "./routes/regulatory.js";
 import { healthRouter } from "./routes/health.js";
+import { httpLogger, logger } from "./lib/logger.js";
 
 const app = express();
+app.use(httpLogger);
 
 export const httpRequestsTotal = new client.Counter({
   name: "http_requests_total",
@@ -317,8 +319,12 @@ app.use("/api", bondSignaturesRouter);  // authenticated bond signature routes
 
 Sentry.setupExpressErrorHandler(app);
 
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error("[error]", err);
+app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
+  if (req.log) {
+    req.log.error({ err }, "internal error");
+  } else {
+    logger.error({ err }, "internal error");
+  }
   res.status(500).json({ error: err.message || "internal error" });
 });
 
@@ -330,13 +336,11 @@ async function start() {
   await startOracleEventListener();
   startComplianceReportScheduler();
   app.listen(env.PORT, () => {
-    console.log(`[boot] tariffshield API on :${env.PORT}`);
-    console.log(`[boot] contract: ${env.TARIFF_SHIELD_CONTRACT_ID}`);
-    console.log(`[boot] cors allowlist: ${Array.from(ALLOWED_ORIGINS).join(", ")}`);
+    logger.info({ port: env.PORT, contractId: env.TARIFF_SHIELD_CONTRACT_ID, corsAllowlist: Array.from(ALLOWED_ORIGINS) }, "tariffshield API server started");
   });
 }
 
 start().catch((err) => {
-  console.error("[boot] fatal", err);
+  logger.fatal({ err }, "fatal server boot error");
   process.exit(1);
 });

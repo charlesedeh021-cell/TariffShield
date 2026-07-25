@@ -95,7 +95,7 @@ importersRouter.post("/", async (req: Request, res: Response) => {
     const friendbotRes = await fetch(`https://friendbot.stellar.org/?addr=${kp.publicKey()}`);
     if (!friendbotRes.ok) throw new Error(`friendbot ${friendbotRes.status}`);
   } catch (err) {
-    console.error("[importers] friendbot fund failed:", err);
+    req.log.error({ err }, "friendbot fund failed");
   }
 
   // Register importer on-chain. Platform admin signs.
