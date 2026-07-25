@@ -14,22 +14,39 @@ npm run dev:api        # start Express API on :3001
 npm run dev:web        # start Next.js dashboard on :3000
 ```
 
-### Code Formatting & Linting
+### Code Formatting & Pre-commit Hooks
 
-Before pushing your changes, please ensure that your Rust code is properly formatted. You can run formatting locally:
+Pre-commit hooks are automatically configured via `husky` and `lint-staged` on `npm install`. Before every commit:
+- `eslint --fix` runs on staged `.ts`/`.tsx` files.
+- `prettier --write` formats staged `.ts`, `.tsx`, `.json`, `.yaml`, and `.md` files.
+- `tsc --noEmit` checks TypeScript types in `apps/api` and `apps/web`.
+- `commitlint` validates that commit messages follow Conventional Commits format.
 
 ```bash
+# Manual formatting and lint checks
 cargo fmt --all
+npm run lint --workspaces --if-present
+
+# Emergency hook bypass (use only when necessary)
+git commit -m "fix(api): urgent bugfix" --no-verify
 ```
 
-To automate this check before committing, we suggest setting up a Git `pre-commit` hook. In `.git/hooks/pre-commit` (or using a tool like `husky`), you can add the following to check formatting:
+> **Note**: Bypassing pre-commit hooks with `--no-verify` should only be used in emergency situations. Ensure CI tests pass before requesting PR review.
+
+### Contract Test Hot Reload (`cargo-watch`)
+
+For instant feedback during Rust contract development, install `cargo-watch` and run hot reloading:
 
 ```bash
-#!/bin/sh
-cargo fmt --all -- --check
-```
+# One-time tool install
+cargo install cargo-watch --version 8.5.2
 
----
+# Watch source files and auto-run cargo test
+npm run watch:contracts
+# or
+make watch-contracts
+```
+The watch command uses `-w src/` to watch crate source files only, avoiding build churn in `target/`. Note for Linux users: ensure system `fs.inotify.max_user_watches` is raised if watching fails on large directory structures.
 
 ## Pull Request Process
 

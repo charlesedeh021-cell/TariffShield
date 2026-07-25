@@ -1,0 +1,12 @@
+{
+  "root": true,
+  "extends": ["tariffshield"],
+  "parserOptions": {
+    "project": [
+      "./apps/api/tsconfig.json",
+      "./apps/web/tsconfig.json",
+      "./packages/sdk/tsconfig.json"
+    ]
+  },
+  "ignorePatterns": ["dist/**", "node_modules/**"]
+}
