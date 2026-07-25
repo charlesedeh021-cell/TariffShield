@@ -8,7 +8,13 @@ import {
   nativeToScVal,
   scValToNative,
   xdr,
-} from "@stellar/stellar-sdk";
+} from '@stellar/stellar-sdk';
+import {
+  COMPATIBILITY_MATRIX,
+  CompatibilityError,
+  checkCompatibility,
+  type ContractVersionRange,
+} from './compatibility.js';
 
 export interface TariffShieldAccount {
   bondId: bigint;
@@ -49,9 +55,13 @@ export interface TariffShieldClientOptions {
   txTimeoutSeconds?: number;
   /** Optional: custom rpc.Server instance */
   server?: rpc.Server;
+  /** Optional: SDK version string for compatibility checking (defaults to "0.1.0") */
+  sdkVersion?: string;
+  /** Optional: skip automatic contract compatibility verification on startup */
+  skipCompatibilityCheck?: boolean;
 }
 
-const DEFAULT_FEE = "1000000"; // 0.1 XLM — generous for Soroban invocations
+const DEFAULT_FEE = '1000000'; // 0.1 XLM — generous for Soroban invocations
 
 /**
  * Wraps the deployed TariffShield Soroban contract.
@@ -65,18 +75,41 @@ export class TariffShieldClient {
   private readonly contract: Contract;
   private readonly networkPassphrase: string;
   private readonly txTimeoutSeconds: number;
+  private readonly compatibilityPromise: Promise<void> | null;
 
   constructor(opts: TariffShieldClientOptions) {
-    this.server = opts.server ?? new rpc.Server(opts.rpcUrl, { allowHttp: opts.rpcUrl.startsWith("http://") });
+    this.server =
+      opts.server ?? new rpc.Server(opts.rpcUrl, { allowHttp: opts.rpcUrl.startsWith('http://') });
     this.contract = new Contract(opts.contractId);
     this.networkPassphrase = opts.networkPassphrase;
     this.txTimeoutSeconds = opts.txTimeoutSeconds ?? 30;
+
+    if (!opts.skipCompatibilityCheck) {
+      const sdkVer = opts.sdkVersion ?? '0.1.0';
+      this.compatibilityPromise = (async () => {
+        try {
+          const contractVer = await this.version();
+          checkCompatibility(contractVer, sdkVer);
+        } catch (err) {
+          if (err instanceof CompatibilityError) {
+            throw err;
+          }
+        }
+      })();
+    } else {
+      this.compatibilityPromise = null;
+    }
   }
 
   // ----- Write methods (sign + submit) -----
 
-  async initialize(signer: Keypair, admin: string, surety: string, token: string): Promise<InvokeResult<null>> {
-    return this.invokeAndSubmit(signer, "initialize", [
+  async initialize(
+    signer: Keypair,
+    admin: string,
+    surety: string,
+    token: string
+  ): Promise<InvokeResult<null>> {
+    return this.invokeAndSubmit(signer, 'initialize', [
       addressToScVal(admin),
       addressToScVal(surety),
       addressToScVal(token),
@@ -87,12 +120,12 @@ export class TariffShieldClient {
     signer: Keypair,
     importer: string,
     bondId: bigint,
-    requiredCollateral: bigint,
+    requiredCollateral: bigint
   ): Promise<InvokeResult<null>> {
-    return this.invokeAndSubmit(signer, "register_importer", [
+    return this.invokeAndSubmit(signer, 'register_importer', [
       addressToScVal(importer),
-      nativeToScVal(bondId, { type: "u64" }),
-      nativeToScVal(requiredCollateral, { type: "i128" }),
+      nativeToScVal(bondId, { type: 'u64' }),
+      nativeToScVal(requiredCollateral, { type: 'i128' }),
     ]);
   }
 
@@ -100,12 +133,12 @@ export class TariffShieldClient {
     signer: Keypair,
     importer: string,
     from: string,
-    amount: bigint,
+    amount: bigint
   ): Promise<InvokeResult<null>> {
-    return this.invokeAndSubmit(signer, "deposit_collateral", [
+    return this.invokeAndSubmit(signer, 'deposit_collateral', [
       addressToScVal(importer),
       addressToScVal(from),
-      nativeToScVal(amount, { type: "i128" }),
+      nativeToScVal(amount, { type: 'i128' }),
     ]);
   }
 
@@ -113,12 +146,12 @@ export class TariffShieldClient {
     signer: Keypair,
     importer: string,
     from: string,
-    amount: bigint,
+    amount: bigint
   ): Promise<InvokeResult<null>> {
-    return this.invokeAndSubmit(signer, "deposit_reserve", [
+    return this.invokeAndSubmit(signer, 'deposit_reserve', [
       addressToScVal(importer),
       addressToScVal(from),
-      nativeToScVal(amount, { type: "i128" }),
+      nativeToScVal(amount, { type: 'i128' }),
     ]);
   }
 
@@ -128,52 +161,57 @@ export class TariffShieldClient {
     newRequired: bigint,
     priceOracleContract?: string,
     bypassRateLimit?: boolean,
-    emergency?: boolean,
+    emergency?: boolean
   ): Promise<InvokeResult<null>> {
+    const primary = signers[0]!;
     const args = [
-      addressToScVal(signer.publicKey()),
+      addressToScVal(primary.publicKey()),
       addressToScVal(importer),
-      nativeToScVal(newRequired, { type: "i128" }),
+      nativeToScVal(newRequired, { type: 'i128' }),
     ];
 
     if (priceOracleContract) {
-      args.push(nativeToScVal({ Some: addressToScVal(priceOracleContract) }, { type: "option" }));
+      args.push(nativeToScVal({ Some: addressToScVal(priceOracleContract) }, { type: 'option' }));
     } else {
-      args.push(nativeToScVal(null, { type: "option" }));
+      args.push(nativeToScVal(null, { type: 'option' }));
     }
 
-    args.push(nativeToScVal(bypassRateLimit ?? false, { type: "bool" }));
-    args.push(nativeToScVal(emergency ?? false, { type: "bool" }));
+    args.push(nativeToScVal(bypassRateLimit ?? false, { type: 'bool' }));
+    args.push(nativeToScVal(emergency ?? false, { type: 'bool' }));
 
-    return this.invokeAndSubmit(signer, "set_required_collateral", args);
+    return this.invokeAndSubmitMulti(signers, 'set_required_collateral', args, primary);
   }
 
   async autoTopUp(signer: Keypair, importer: string): Promise<InvokeResult<bigint>> {
-    return this.invokeAndSubmit(signer, "auto_top_up", [addressToScVal(importer)]);
+    return this.invokeAndSubmit(signer, 'auto_top_up', [addressToScVal(importer)]);
   }
 
   async withdrawCollateral(
     signer: Keypair,
     importer: string,
     to: string,
-    amount: bigint,
+    amount: bigint
   ): Promise<InvokeResult<null>> {
-    return this.invokeAndSubmit(signer, "withdraw_collateral", [
+    return this.invokeAndSubmit(signer, 'withdraw_collateral', [
       addressToScVal(importer),
       addressToScVal(to),
-      nativeToScVal(amount, { type: "i128" }),
+      nativeToScVal(amount, { type: 'i128' }),
     ]);
   }
 
-  async accrueYield(signer: Keypair, importer: string, amount: bigint): Promise<InvokeResult<null>> {
-    return this.invokeAndSubmit(signer, "accrue_yield", [
+  async accrueYield(
+    signer: Keypair,
+    importer: string,
+    amount: bigint
+  ): Promise<InvokeResult<null>> {
+    return this.invokeAndSubmit(signer, 'accrue_yield', [
       addressToScVal(importer),
-      nativeToScVal(amount, { type: "i128" }),
+      nativeToScVal(amount, { type: 'i128' }),
     ]);
   }
 
   async clawback(signer: Keypair, importer: string): Promise<InvokeResult<bigint>> {
-    return this.invokeAndSubmit(signer, "clawback", [addressToScVal(importer)]);
+    return this.invokeAndSubmit(signer, 'clawback', [addressToScVal(importer)]);
   }
 
   /**
@@ -182,28 +220,32 @@ export class TariffShieldClient {
    * becomes effective immediately and an `admin_transferred` event is emitted.
    */
   async transferAdmin(signer: Keypair, newAdmin: string): Promise<InvokeResult<null>> {
-    return this.invokeAndSubmit(signer, "transfer_admin", [addressToScVal(newAdmin)]);
+    return this.invokeAndSubmit(signer, 'transfer_admin', [addressToScVal(newAdmin)]);
   }
 
   // #336 — importer formally disputes the most recent oracle-set required_collateral.
   // Must be called within the 72-hour window opened by set_required_collateral.
   async raiseDispute(signer: Keypair, importer: string): Promise<InvokeResult<null>> {
-    return this.invokeAndSubmit(signer, "raise_dispute", [addressToScVal(importer)]);
+    return this.invokeAndSubmit(signer, 'raise_dispute', [addressToScVal(importer)]);
   }
 
   // #336 — platform admin resolves an open dispute.
   // accept=true keeps the new oracle value; accept=false reverts to pre-dispute value.
-  async resolveDispute(signer: Keypair, importer: string, accept: boolean): Promise<InvokeResult<null>> {
-    return this.invokeAndSubmit(signer, "resolve_dispute", [
+  async resolveDispute(
+    signer: Keypair,
+    importer: string,
+    accept: boolean
+  ): Promise<InvokeResult<null>> {
+    return this.invokeAndSubmit(signer, 'resolve_dispute', [
       addressToScVal(importer),
-      nativeToScVal(accept, { type: "bool" }),
+      nativeToScVal(accept, { type: 'bool' }),
     ]);
   }
 
   // ----- Read methods (simulate only) -----
 
   async getAccount(importer: string): Promise<TariffShieldAccount> {
-    const raw = await this.simulate("get_account", [addressToScVal(importer)]);
+    const raw = await this.simulate('get_account', [addressToScVal(importer)]);
     const obj = scValToNative(raw) as Record<string, unknown>;
     return {
       bondId: BigInt(obj.bond_id as string | number),
@@ -222,7 +264,7 @@ export class TariffShieldClient {
 
   // #331 — return the rolling on-chain audit trail of required_collateral changes.
   async getCollateralHistory(importer: string): Promise<CollateralHistoryEntry[]> {
-    const raw = await this.simulate("get_collateral_history", [addressToScVal(importer)]);
+    const raw = await this.simulate('get_collateral_history', [addressToScVal(importer)]);
     const arr = scValToNative(raw) as Array<Record<string, unknown>>;
     return arr.map((entry) => ({
       value: BigInt((entry.value as string | number) ?? 0),
@@ -231,27 +273,35 @@ export class TariffShieldClient {
   }
 
   async getAdmin(): Promise<string> {
-    const raw = await this.simulate("get_admin", []);
+    const raw = await this.simulate('get_admin', []);
     return scValToNative(raw) as string;
   }
 
   async getSurety(): Promise<string> {
-    const raw = await this.simulate("get_surety", []);
+    const raw = await this.simulate('get_surety', []);
     return scValToNative(raw) as string;
   }
 
   async getToken(): Promise<string> {
-    const raw = await this.simulate("get_token", []);
+    const raw = await this.simulate('get_token', []);
+    return scValToNative(raw) as string;
+  }
+
+  async version(): Promise<string> {
+    const raw = await this.simulate('version', []);
     return scValToNative(raw) as string;
   }
 
   // ----- Internals -----
 
   private async simulate(method: string, args: xdr.ScVal[]): Promise<xdr.ScVal> {
+    if (this.compatibilityPromise && method !== 'version') {
+      await this.compatibilityPromise;
+    }
     // Use the contract owner address as a stand-in source — read-only simulation does not require this account to exist.
     // Per @stellar/stellar-sdk, build a transaction with a no-op source account loaded from RPC.
     const sourceAccount = await this.server.getAccount(
-      "GBEB3ISGEGXFENDBEK6WCHNAJUXL4CMEPMTC3MCJ4A4NQAF6TTLLFPFD",
+      'GBEB3ISGEGXFENDBEK6WCHNAJUXL4CMEPMTC3MCJ4A4NQAF6TTLLFPFD'
     );
     const tx = new TransactionBuilder(sourceAccount, {
       fee: DEFAULT_FEE,
@@ -274,7 +324,7 @@ export class TariffShieldClient {
     signers: Keypair[],
     method: string,
     args: xdr.ScVal[],
-    primary: Keypair,
+    primary: Keypair
   ): Promise<InvokeResult<T>> {
     const account = await this.server.getAccount(primary.publicKey());
     const tx = new TransactionBuilder(account, {
@@ -290,29 +340,34 @@ export class TariffShieldClient {
       prepared.sign(signer);
     }
     const sendResponse = await this.server.sendTransaction(prepared);
-    if (sendResponse.status === "ERROR") {
+    if (sendResponse.status === 'ERROR') {
       throw new Error(`send failed: ${JSON.stringify(sendResponse.errorResult)}`);
     }
     const txHash = sendResponse.hash;
 
     let txResult = await this.server.getTransaction(txHash);
     const deadline = Date.now() + 60_000;
-    while (txResult.status === "NOT_FOUND" && Date.now() < deadline) {
+    while (txResult.status === 'NOT_FOUND' && Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 1500));
       txResult = await this.server.getTransaction(txHash);
     }
-    if (txResult.status !== "SUCCESS") {
+    if (txResult.status !== 'SUCCESS') {
       throw new Error(`tx ${txHash} status=${txResult.status}`);
     }
     const retval = txResult.returnValue;
     const parsed = (retval ? scValToNative(retval) : null) as T;
-    return { txHash, result: parsed, ledgerSequence: txResult.ledger, applicationOrder: txResult.applicationOrder };
+    return {
+      txHash,
+      result: parsed,
+      ledgerSequence: txResult.ledger,
+      applicationOrder: txResult.applicationOrder,
+    };
   }
 
   private async invokeAndSubmit<T>(
     signer: Keypair,
     method: string,
-    args: xdr.ScVal[],
+    args: xdr.ScVal[]
   ): Promise<InvokeResult<T>> {
     const account = await this.server.getAccount(signer.publicKey());
     const tx = new TransactionBuilder(account, {
@@ -326,26 +381,31 @@ export class TariffShieldClient {
     const prepared = await this.server.prepareTransaction(tx);
     prepared.sign(signer);
     const sendResponse = await this.server.sendTransaction(prepared);
-    if (sendResponse.status === "ERROR") {
+    if (sendResponse.status === 'ERROR') {
       throw new Error(`send failed: ${JSON.stringify(sendResponse.errorResult)}`);
     }
     const txHash = sendResponse.hash;
 
     let txResult = await this.server.getTransaction(txHash);
     const deadline = Date.now() + 60_000;
-    while (txResult.status === "NOT_FOUND" && Date.now() < deadline) {
+    while (txResult.status === 'NOT_FOUND' && Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 1500));
       txResult = await this.server.getTransaction(txHash);
     }
-    if (txResult.status !== "SUCCESS") {
+    if (txResult.status !== 'SUCCESS') {
       throw new Error(
-        `tx ${txHash} status=${txResult.status} (${(txResult as { resultXdr?: { toXDR(format: string): string } }).resultXdr?.toXDR("base64") ?? "no xdr"})`,
+        `tx ${txHash} status=${txResult.status} (${(txResult as { resultXdr?: { toXDR(format: string): string } }).resultXdr?.toXDR('base64') ?? 'no xdr'})`
       );
     }
 
     const retval = txResult.returnValue;
     const parsed = (retval ? scValToNative(retval) : null) as T;
-    return { txHash, result: parsed, ledgerSequence: txResult.ledger, applicationOrder: txResult.applicationOrder };
+    return {
+      txHash,
+      result: parsed,
+      ledgerSequence: txResult.ledger,
+      applicationOrder: txResult.applicationOrder,
+    };
   }
 }
 
@@ -353,4 +413,11 @@ function addressToScVal(addr: string): xdr.ScVal {
   return new Address(addr).toScVal();
 }
 
-export { Keypair, Networks };
+export {
+  Keypair,
+  Networks,
+  COMPATIBILITY_MATRIX,
+  CompatibilityError,
+  checkCompatibility,
+  type ContractVersionRange,
+};
