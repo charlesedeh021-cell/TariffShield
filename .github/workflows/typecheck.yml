@@ -1,0 +1,50 @@
+name: TypeScript Type Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Restore npm cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Assert tsconfig.base.json has strict mode enabled
+        run: |
+          strict=$(jq -r '.compilerOptions.strict // false' tsconfig.base.json)
+          if [ "$strict" != "true" ]; then
+            echo "tsconfig.base.json does not have \"strict\": true — the type-check gate is not meaningful without it."
+            exit 1
+          fi
+          echo "tsconfig.base.json: strict=true ✓"
+
+      - name: Type check SDK
+        run: npx tsc --noEmit -p packages/sdk/tsconfig.json
+
+      - name: Type check API
+        run: npx tsc --noEmit -p apps/api/tsconfig.json
+
+      - name: Type check Web
+        run: npx tsc --noEmit -p apps/web/tsconfig.json

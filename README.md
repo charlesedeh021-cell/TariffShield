@@ -1,6 +1,7 @@
 # TariffShield
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/vjuliaife/TariffShield)
+[![TypeScript Type Check](https://github.com/vjuliaife/TariffShield/actions/workflows/typecheck.yml/badge.svg)](https://github.com/vjuliaife/TariffShield/actions/workflows/typecheck.yml)
 
 > Programmable customs-bond collateral. US importers post yield-bearing USDC instead of dead-weight cash collateral; a Soroban smart contract auto-tops-up the bond during tariff spikes; the surety partner keeps emergency clawback authority.
 
