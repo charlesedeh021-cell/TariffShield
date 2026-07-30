@@ -75,5 +75,10 @@
   },
   "dependencies": {
     "commander": "^15.0.0"
+  },
+  "overrides": {
+    "form-data": "^4.0.6",
+    "fast-uri": "^3.1.4",
+    "shell-quote": "^1.10.0"
   }
 }

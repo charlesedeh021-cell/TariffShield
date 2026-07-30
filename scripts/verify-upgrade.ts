@@ -8,9 +8,31 @@
  * Usage:
  *   tsx scripts/verify-upgrade.ts
  *   tsx scripts/verify-upgrade.ts --skip-canary
+ *   tsx scripts/verify-upgrade.ts --dry-run
+ *
+ * Flags:
+ *   --skip-canary   Skip the deposit/withdraw canary cycle entirely.
+ *   --dry-run       Run the canary cycle against simulateTransaction only — no
+ *                   transaction is signed or submitted, and no funds move. The
+ *                   deposit/withdraw balance-comparison assertions still run,
+ *                   evaluated against the simulated (not on-chain) balances.
+ *                   Mirrors the --dry-run pattern in rotate-admin.ts. Combining
+ *                   --dry-run with --skip-canary is treated the same as
+ *                   --skip-canary alone (canary cycle does not run).
  */
 
-import { TariffShieldClient, Keypair } from "../packages/sdk/src/index.js";
+import {
+  TariffShieldClient,
+  Keypair,
+} from "../packages/sdk/src/index.js";
+import {
+  Contract,
+  TransactionBuilder,
+  rpc as SorobanRpc,
+  nativeToScVal,
+  scValToNative,
+  Address,
+} from "@stellar/stellar-sdk";
 import { pool } from "../apps/api/src/db.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -39,6 +61,8 @@ export interface CanaryResult {
   depositTxHash?: string;
   withdrawTxHash?: string;
   error?: string;
+  /** true when this result came from --dry-run simulateTransaction calls rather than a live submit. */
+  simulated?: boolean;
 }
 
 interface OnChainAccount {
@@ -99,9 +123,192 @@ export function determineOverallStatus(failedAccounts: number): "PASS" | "FAIL" 
   return failedAccounts === 0 ? "PASS" : "FAIL";
 }
 
+/** Minimal shape of the parsed on-chain account object used by the canary cycle. */
+interface CanaryAccountLike {
+  collateralBalance: bigint;
+}
+
+/**
+ * Dependencies the canary cycle needs, injected so runCanaryCycle can be unit
+ * tested against fakes instead of a live SorobanRpc.Server / TariffShieldClient.
+ *
+ * dryRun=false uses `client` (getAccount / depositCollateral / withdrawCollateral) —
+ * the existing live path, unchanged in behavior.
+ *
+ * dryRun=true instead builds the deposit/withdraw transactions manually via
+ * `contract`/`server` and reads balances from `server.simulateTransaction(...)`
+ * results (via `scValToNative`), since TariffShieldClient's write methods build
+ * + sign + submit in one shot and don't expose a simulate-only path. Live
+ * getAccount is still used for the *before* balance in dry-run mode too, since
+ * that's a read-only simulate call already (see TariffShieldClient#getAccount).
+ */
+export interface RunCanaryCycleOptions {
+  client: Pick<TariffShieldClient, "getAccount" | "depositCollateral" | "withdrawCollateral">;
+  canaryKeypair: Keypair;
+  canaryImporterAddress: string;
+  testAmount: bigint;
+  dryRun: boolean;
+  /** Required when dryRun=true; unused otherwise. */
+  server?: SorobanRpc.Server;
+  contractId?: string;
+  networkPassphrase?: string;
+}
+
+/** Simulates deposit_collateral/withdraw_collateral and extracts the resulting collateral_balance field. */
+async function simulateCollateralCall(
+  server: SorobanRpc.Server,
+  contract: Contract,
+  networkPassphrase: string,
+  sourcePublicKey: string,
+  method: "deposit_collateral" | "withdraw_collateral",
+  importer: string,
+  from: string,
+  amount: bigint,
+): Promise<CanaryAccountLike> {
+  const sourceAccount = await server.getAccount(sourcePublicKey);
+  const tx = new TransactionBuilder(sourceAccount, {
+    fee: "1000000",
+    networkPassphrase,
+  })
+    .addOperation(
+      contract.call(
+        method,
+        new Address(importer).toScVal(),
+        new Address(from).toScVal(),
+        nativeToScVal(amount, { type: "i128" }),
+      ),
+    )
+    .setTimeout(30)
+    .build();
+
+  const sim = await server.simulateTransaction(tx);
+  if (SorobanRpc.Api.isSimulationError(sim)) {
+    throw new Error(`${method} simulation failed: ${sim.error}`);
+  }
+  if (!sim.result?.retval) {
+    throw new Error(`${method} simulation returned no value`);
+  }
+
+  // deposit_collateral/withdraw_collateral return the full post-call account
+  // record (same shape as get_account) per the contract's write-method convention.
+  const obj = scValToNative(sim.result.retval) as Record<string, unknown>;
+  return { collateralBalance: BigInt(obj.collateral_balance as string) };
+}
+
+/**
+ * Runs the deposit/withdraw canary cycle and returns its CanaryResult.
+ *
+ * Extracted from main() so both the live and --dry-run paths are independently
+ * unit-testable (scripts/__tests__/verify-upgrade.test.ts) against a mocked
+ * TariffShieldClient / SorobanRpc.Server, without needing a live database,
+ * network connection, or process-level mocking.
+ */
+export async function runCanaryCycle(opts: RunCanaryCycleOptions): Promise<CanaryResult> {
+  const { client, canaryKeypair, canaryImporterAddress, testAmount, dryRun } = opts;
+
+  try {
+    const beforeAccount = await client.getAccount(canaryImporterAddress);
+    const beforeBalance = beforeAccount.collateralBalance;
+
+    if (!dryRun) {
+      const depositResult = await client.depositCollateral(
+        canaryKeypair,
+        canaryImporterAddress,
+        canaryImporterAddress,
+        testAmount,
+      );
+
+      const afterDepositAccount = await client.getAccount(canaryImporterAddress);
+      const afterDepositBalance = afterDepositAccount.collateralBalance;
+
+      if (afterDepositBalance !== beforeBalance + testAmount) {
+        throw new Error(
+          `Balance mismatch after deposit. Expected ${beforeBalance + testAmount}, got ${afterDepositBalance}`,
+        );
+      }
+
+      const withdrawResult = await client.withdrawCollateral(
+        canaryKeypair,
+        canaryImporterAddress,
+        canaryImporterAddress,
+        testAmount,
+      );
+
+      const afterWithdrawAccount = await client.getAccount(canaryImporterAddress);
+      const afterWithdrawBalance = afterWithdrawAccount.collateralBalance;
+
+      if (afterWithdrawBalance !== beforeBalance) {
+        throw new Error(
+          `Balance mismatch after withdrawal. Expected ${beforeBalance}, got ${afterWithdrawBalance}`,
+        );
+      }
+
+      return {
+        status: "PASS",
+        depositTxHash: depositResult.txHash,
+        withdrawTxHash: withdrawResult.txHash,
+      };
+    }
+
+    // --dry-run: simulate both calls instead of submitting them.
+    if (!opts.server || !opts.contractId || !opts.networkPassphrase) {
+      throw new Error("runCanaryCycle: server/contractId/networkPassphrase are required when dryRun=true");
+    }
+    const contract = new Contract(opts.contractId);
+
+    const afterDepositAccount = await simulateCollateralCall(
+      opts.server,
+      contract,
+      opts.networkPassphrase,
+      canaryKeypair.publicKey(),
+      "deposit_collateral",
+      canaryImporterAddress,
+      canaryImporterAddress,
+      testAmount,
+    );
+    const afterDepositBalance = afterDepositAccount.collateralBalance;
+
+    if (afterDepositBalance !== beforeBalance + testAmount) {
+      throw new Error(
+        `[dry-run] Balance mismatch after simulated deposit. Expected ${beforeBalance + testAmount}, got ${afterDepositBalance}`,
+      );
+    }
+
+    const afterWithdrawAccount = await simulateCollateralCall(
+      opts.server,
+      contract,
+      opts.networkPassphrase,
+      canaryKeypair.publicKey(),
+      "withdraw_collateral",
+      canaryImporterAddress,
+      canaryImporterAddress,
+      testAmount,
+    );
+    const afterWithdrawBalance = afterWithdrawAccount.collateralBalance;
+
+    if (afterWithdrawBalance !== beforeBalance) {
+      throw new Error(
+        `[dry-run] Balance mismatch after simulated withdrawal. Expected ${beforeBalance}, got ${afterWithdrawBalance}`,
+      );
+    }
+
+    return {
+      status: "PASS",
+      simulated: true,
+    };
+  } catch (error: any) {
+    return {
+      status: "FAIL",
+      error: error.message,
+      ...(dryRun ? { simulated: true } : {}),
+    };
+  }
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const skipCanary = args.includes("--skip-canary");
+  const dryRun = args.includes("--dry-run");
 
   const contractId = process.env.TARIFF_SHIELD_CONTRACT_ID;
   const rpcUrl = process.env.STELLAR_RPC_URL;
@@ -224,7 +431,9 @@ async function main() {
   let canaryResult: CanaryResult | null = null;
   if (!skipCanary) {
     console.log(
-      "\n[verify-upgrade] Running canary deposit/withdrawal cycle...",
+      dryRun
+        ? "\n[verify-upgrade] Running canary deposit/withdrawal cycle (--dry-run, simulateTransaction only)..."
+        : "\n[verify-upgrade] Running canary deposit/withdrawal cycle...",
     );
 
     if (!canaryImporterAddress || !canaryImporterSecret) {
@@ -237,68 +446,39 @@ async function main() {
       };
       failedAccounts++;
     } else {
-      try {
-        const canaryKeypair = Keypair.fromSecret(canaryImporterSecret);
-        const testAmount = BigInt(1_000_000); // 0.1 XLM
+      const canaryKeypair = Keypair.fromSecret(canaryImporterSecret);
+      const testAmount = BigInt(1_000_000); // 0.1 XLM
 
-        const beforeAccount = await client.getAccount(canaryImporterAddress);
-        const beforeBalance = beforeAccount.collateralBalance;
+      console.log(
+        dryRun
+          ? `  Simulating deposit/withdraw of ${testAmount.toString()} stroops (no funds will move)...`
+          : `  Depositing/withdrawing ${testAmount.toString()} stroops...`,
+      );
 
-        console.log(`  Initial balance: ${beforeBalance.toString()}`);
-        console.log(`  Depositing ${testAmount.toString()} stroops...`);
+      canaryResult = await runCanaryCycle({
+        client,
+        canaryKeypair,
+        canaryImporterAddress,
+        testAmount,
+        dryRun,
+        server: dryRun
+          ? new SorobanRpc.Server(rpcUrl, { allowHttp: rpcUrl.startsWith("http://") })
+          : undefined,
+        contractId,
+        networkPassphrase,
+      });
 
-        const depositResult = await client.depositCollateral(
-          canaryKeypair,
-          canaryImporterAddress,
-          canaryImporterAddress,
-          testAmount,
-        );
-        console.log(`  ✓ Deposit tx: ${depositResult.txHash}`);
-
-        const afterDepositAccount = await client.getAccount(
-          canaryImporterAddress,
-        );
-        const afterDepositBalance = afterDepositAccount.collateralBalance;
-
-        if (afterDepositBalance !== beforeBalance + testAmount) {
-          throw new Error(
-            `Balance mismatch after deposit. Expected ${beforeBalance + testAmount}, got ${afterDepositBalance}`,
-          );
+      if (canaryResult.status === "PASS") {
+        if (canaryResult.simulated) {
+          console.log(`  ✓ Canary cycle simulated successfully (--dry-run, nothing broadcast)`);
+        } else {
+          console.log(`  ✓ Deposit tx: ${canaryResult.depositTxHash}`);
+          console.log(`  ✓ Withdraw tx: ${canaryResult.withdrawTxHash}`);
+          console.log(`  ✓ Canary cycle completed successfully`);
         }
-
-        console.log(`  Withdrawing ${testAmount.toString()} stroops...`);
-        const withdrawResult = await client.withdrawCollateral(
-          canaryKeypair,
-          canaryImporterAddress,
-          canaryImporterAddress,
-          testAmount,
-        );
-        console.log(`  ✓ Withdraw tx: ${withdrawResult.txHash}`);
-
-        const afterWithdrawAccount = await client.getAccount(
-          canaryImporterAddress,
-        );
-        const afterWithdrawBalance = afterWithdrawAccount.collateralBalance;
-
-        if (afterWithdrawBalance !== beforeBalance) {
-          throw new Error(
-            `Balance mismatch after withdrawal. Expected ${beforeBalance}, got ${afterWithdrawBalance}`,
-          );
-        }
-
-        canaryResult = {
-          status: "PASS",
-          depositTxHash: depositResult.txHash,
-          withdrawTxHash: withdrawResult.txHash,
-        };
-        console.log(`  ✓ Canary cycle completed successfully`);
-      } catch (error: any) {
-        canaryResult = {
-          status: "FAIL",
-          error: error.message,
-        };
+      } else {
         failedAccounts++;
-        console.log(`  ✗ Canary cycle failed: ${error.message}`);
+        console.log(`  ✗ Canary cycle failed: ${canaryResult.error}`);
       }
     }
   } else {

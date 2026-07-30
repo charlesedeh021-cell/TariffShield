@@ -2,24 +2,27 @@
  * Unit tests for scripts/verify-upgrade.ts.
  *
  * Covers the field-diffing logic (diffAccountFields) that compares on-chain
- * post-upgrade account state against a pre-upgrade backup, and the
- * overallStatus PASS/FAIL determination (determineOverallStatus) based on
- * the failedAccounts count. These were extracted out of the previously
- * inline verification loop in main() specifically so they could be unit
- * tested here without a live database or network connection.
+ * post-upgrade account state against a pre-upgrade backup, the overallStatus
+ * PASS/FAIL determination (determineOverallStatus) based on the
+ * failedAccounts count, and runCanaryCycle — both its live path (deposit +
+ * withdraw via TariffShieldClient) and its --dry-run path (#776), which
+ * simulates the same deposit_collateral/withdraw_collateral calls via
+ * SorobanRpc.Server#simulateTransaction instead of submitting them. These
+ * were extracted out of the previously inline verification/canary loops in
+ * main() specifically so they could be unit tested here without a live
+ * database or network connection.
  *
- * The --skip-canary flag path and the full end-to-end run (database query +
+ * The --skip-canary flag branch and the full end-to-end run (database query +
  * report generation) are exercised only via manual/staging runs of the
- * script itself — they depend on a live pool.query and TariffShieldClient,
- * which main() wires up directly rather than accepting as injectable
- * dependencies. diffAccountFields and determineOverallStatus are the pure,
- * side-effect-free pieces the issue calls out, and are what's covered below.
+ * script itself — they depend on a live pool.query, which main() wires up
+ * directly rather than accepting as an injectable dependency.
  *
  * Run via:  npm run test:scripts
  */
 
-import { describe, it, before } from 'node:test';
+import { describe, it, before, mock } from 'node:test';
 import assert from 'node:assert/strict';
+import { nativeToScVal, TransactionBuilder, Keypair } from '@stellar/stellar-sdk';
 
 // scripts/verify-upgrade.ts transitively imports apps/api/src/db.ts, which
 // validates process.env against a Zod schema at module load time, opens a
@@ -39,6 +42,7 @@ import assert from 'node:assert/strict';
 // that will never fire.
 let diffAccountFields: (typeof import('../verify-upgrade.js'))['diffAccountFields'];
 let determineOverallStatus: (typeof import('../verify-upgrade.js'))['determineOverallStatus'];
+let runCanaryCycle: (typeof import('../verify-upgrade.js'))['runCanaryCycle'];
 
 before(async () => {
   process.env.DATABASE_URL ??= 'postgres://test:test@localhost:5432/tariffshield_test';
@@ -55,6 +59,7 @@ before(async () => {
   const mod = await import('../verify-upgrade.js');
   diffAccountFields = mod.diffAccountFields;
   determineOverallStatus = mod.determineOverallStatus;
+  runCanaryCycle = mod.runCanaryCycle;
 });
 
 function makeOnChainAccount(
@@ -183,5 +188,288 @@ describe('determineOverallStatus', () => {
 
   it('returns FAIL for a large failedAccounts count', () => {
     assert.equal(determineOverallStatus(42), 'FAIL');
+  });
+});
+
+describe('runCanaryCycle (live, dryRun=false)', () => {
+  const canaryKeypair = Keypair.random();
+  const canaryImporterAddress = canaryKeypair.publicKey();
+  const testAmount = 1_000_000n;
+
+  it('passes and returns tx hashes when deposit/withdraw round-trips the balance back to the starting point', async () => {
+    let balance = 5_000_000n;
+    const client = {
+      getAccount: async () => ({ collateralBalance: balance }),
+      depositCollateral: async () => {
+        balance += testAmount;
+        return { txHash: 'DEPOSIT_TX_HASH' };
+      },
+      withdrawCollateral: async () => {
+        balance -= testAmount;
+        return { txHash: 'WITHDRAW_TX_HASH' };
+      },
+    };
+
+    const result = await runCanaryCycle({
+      client: client as any,
+      canaryKeypair,
+      canaryImporterAddress,
+      testAmount,
+      dryRun: false,
+    });
+
+    assert.deepEqual(result, {
+      status: 'PASS',
+      depositTxHash: 'DEPOSIT_TX_HASH',
+      withdrawTxHash: 'WITHDRAW_TX_HASH',
+    });
+  });
+
+  it('fails with a balance-mismatch error when the post-deposit balance is wrong', async () => {
+    const client = {
+      getAccount: async () => ({ collateralBalance: 5_000_000n }), // never actually increments
+      depositCollateral: async () => ({ txHash: 'DEPOSIT_TX_HASH' }),
+      withdrawCollateral: async () => ({ txHash: 'WITHDRAW_TX_HASH' }),
+    };
+
+    const result = await runCanaryCycle({
+      client: client as any,
+      canaryKeypair,
+      canaryImporterAddress,
+      testAmount,
+      dryRun: false,
+    });
+
+    assert.equal(result.status, 'FAIL');
+    assert.match(result.error ?? '', /Balance mismatch after deposit/);
+    assert.equal(result.simulated, undefined);
+  });
+
+  it('fails with a balance-mismatch error when the post-withdraw balance does not return to baseline', async () => {
+    let balance = 5_000_000n;
+    const client = {
+      getAccount: async () => ({ collateralBalance: balance }),
+      depositCollateral: async () => {
+        balance += testAmount;
+        return { txHash: 'DEPOSIT_TX_HASH' };
+      },
+      withdrawCollateral: async () => {
+        // Intentionally do not decrement — simulates a withdraw that silently no-ops on-chain.
+        return { txHash: 'WITHDRAW_TX_HASH' };
+      },
+    };
+
+    const result = await runCanaryCycle({
+      client: client as any,
+      canaryKeypair,
+      canaryImporterAddress,
+      testAmount,
+      dryRun: false,
+    });
+
+    assert.equal(result.status, 'FAIL');
+    assert.match(result.error ?? '', /Balance mismatch after withdrawal/);
+  });
+
+  it('fails when depositCollateral itself rejects (e.g. contract call reverts)', async () => {
+    const client = {
+      getAccount: async () => ({ collateralBalance: 5_000_000n }),
+      depositCollateral: async () => {
+        throw new Error('deposit_collateral: insufficient reserve');
+      },
+      withdrawCollateral: async () => ({ txHash: 'WITHDRAW_TX_HASH' }),
+    };
+
+    const result = await runCanaryCycle({
+      client: client as any,
+      canaryKeypair,
+      canaryImporterAddress,
+      testAmount,
+      dryRun: false,
+    });
+
+    assert.equal(result.status, 'FAIL');
+    assert.match(result.error ?? '', /insufficient reserve/);
+  });
+});
+
+describe('runCanaryCycle (--dry-run, dryRun=true)', () => {
+  const canaryKeypair = Keypair.random();
+  const canaryImporterAddress = canaryKeypair.publicKey();
+  const testAmount = 1_000_000n;
+  const contractId = 'CA4XHIJVTYFEATMWUUUDKCEIRXXOSMIYKNLFLHYM4UBCLYD4FPIXNJIU';
+  const networkPassphrase = 'Test SDF Network ; September 2015';
+
+  function scValAccountReturn(collateralBalance: bigint) {
+    return nativeToScVal(
+      { collateral_balance: collateralBalance.toString() },
+      { type: { collateral_balance: ['symbol', 'i128'] } },
+    );
+  }
+
+  function stubTransactionBuilder(fakeTx: unknown) {
+    const buildStub = mock.method(TransactionBuilder.prototype, 'build', function () {
+      return fakeTx;
+    });
+    const addOpStub = mock.method(TransactionBuilder.prototype, 'addOperation', function (this: any) {
+      return this;
+    });
+    const setTimeoutStub = mock.method(TransactionBuilder.prototype, 'setTimeout', function (this: any) {
+      return this;
+    });
+    return () => {
+      buildStub.mock.restore();
+      addOpStub.mock.restore();
+      setTimeoutStub.mock.restore();
+    };
+  }
+
+  it('simulates deposit + withdraw and returns simulated:true without calling depositCollateral/withdrawCollateral', async () => {
+    const depositCollateral = mock.fn(async () => {
+      throw new Error('depositCollateral (live submit) must not be called in --dry-run mode');
+    });
+    const withdrawCollateral = mock.fn(async () => {
+      throw new Error('withdrawCollateral (live submit) must not be called in --dry-run mode');
+    });
+
+    const client = {
+      getAccount: async () => ({ collateralBalance: 5_000_000n }),
+      depositCollateral,
+      withdrawCollateral,
+    };
+
+    const fakeTx = {};
+    const restore = stubTransactionBuilder(fakeTx);
+
+    let simCallCount = 0;
+    const server = {
+      getAccount: async () => ({ accountId: () => 'GSOURCE', sequenceNumber: () => '1' }),
+      simulateTransaction: async () => {
+        simCallCount += 1;
+        // First call is the simulated deposit (balance goes up by testAmount),
+        // second is the simulated withdraw (balance returns to baseline).
+        const balance = simCallCount === 1 ? 5_000_000n + testAmount : 5_000_000n;
+        return { result: { retval: scValAccountReturn(balance) } };
+      },
+    };
+
+    try {
+      const result = await runCanaryCycle({
+        client: client as any,
+        canaryKeypair,
+        canaryImporterAddress,
+        testAmount,
+        dryRun: true,
+        server: server as any,
+        contractId,
+        networkPassphrase,
+      });
+
+      assert.deepEqual(result, { status: 'PASS', simulated: true });
+      assert.equal(depositCollateral.mock.callCount(), 0);
+      assert.equal(withdrawCollateral.mock.callCount(), 0);
+      assert.equal(simCallCount, 2);
+    } finally {
+      restore();
+    }
+  });
+
+  it('still runs the balance-comparison assertions against simulated results and fails on a simulated deposit mismatch', async () => {
+    const client = {
+      getAccount: async () => ({ collateralBalance: 5_000_000n }),
+      depositCollateral: async () => ({ txHash: 'unused' }),
+      withdrawCollateral: async () => ({ txHash: 'unused' }),
+    };
+
+    const fakeTx = {};
+    const restore = stubTransactionBuilder(fakeTx);
+
+    const server = {
+      getAccount: async () => ({ accountId: () => 'GSOURCE', sequenceNumber: () => '1' }),
+      simulateTransaction: async () => {
+        // Simulated deposit reports no balance change at all — should fail the assertion.
+        return { result: { retval: scValAccountReturn(5_000_000n) } };
+      },
+    };
+
+    try {
+      const result = await runCanaryCycle({
+        client: client as any,
+        canaryKeypair,
+        canaryImporterAddress,
+        testAmount,
+        dryRun: true,
+        server: server as any,
+        contractId,
+        networkPassphrase,
+      });
+
+      assert.equal(result.status, 'FAIL');
+      assert.equal(result.simulated, true);
+      assert.match(result.error ?? '', /\[dry-run] Balance mismatch after simulated deposit/);
+    } finally {
+      restore();
+    }
+  });
+
+  it('fails when simulateTransaction reports a simulation error (isSimulationError)', async () => {
+    const client = {
+      getAccount: async () => ({ collateralBalance: 5_000_000n }),
+      depositCollateral: async () => ({ txHash: 'unused' }),
+      withdrawCollateral: async () => ({ txHash: 'unused' }),
+    };
+
+    const fakeTx = {};
+    const restore = stubTransactionBuilder(fakeTx);
+
+    const server = {
+      getAccount: async () => ({ accountId: () => 'GSOURCE', sequenceNumber: () => '1' }),
+      simulateTransaction: async () => ({
+        error: 'HostError: Error(Contract, #4) — insufficient collateral',
+      }),
+    };
+
+    try {
+      const result = await runCanaryCycle({
+        client: client as any,
+        canaryKeypair,
+        canaryImporterAddress,
+        testAmount,
+        dryRun: true,
+        server: server as any,
+        contractId,
+        networkPassphrase,
+      });
+
+      assert.equal(result.status, 'FAIL');
+      assert.equal(result.simulated, true);
+      assert.match(result.error ?? '', /deposit_collateral simulation failed/);
+    } finally {
+      restore();
+    }
+  });
+
+  it('throws a clear error when dryRun=true but server/contractId/networkPassphrase are not provided', async () => {
+    const client = {
+      getAccount: async () => ({ collateralBalance: 5_000_000n }),
+      depositCollateral: async () => ({ txHash: 'unused' }),
+      withdrawCollateral: async () => ({ txHash: 'unused' }),
+    };
+
+    const result = await runCanaryCycle({
+      client: client as any,
+      canaryKeypair,
+      canaryImporterAddress,
+      testAmount,
+      dryRun: true,
+      // server/contractId/networkPassphrase intentionally omitted
+    });
+
+    assert.equal(result.status, 'FAIL');
+    assert.equal(result.simulated, true);
+    assert.match(
+      result.error ?? '',
+      /server\/contractId\/networkPassphrase are required when dryRun=true/,
+    );
   });
 });
