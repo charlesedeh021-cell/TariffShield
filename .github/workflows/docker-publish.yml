@@ -4,6 +4,14 @@ on:
   push:
     branches: [main]
 
+# Only one image build per branch may run at a time. Without this, two merges in
+# quick succession start overlapping builds and whichever finishes last wins the
+# `latest` tag — which can be the older commit. Superseded runs are cancelled so
+# `latest` always ends up pointing at the most recent commit on main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   docker:
     name: build-and-push
