@@ -5,6 +5,13 @@ on:
     branches:
       - main
 
+# Staging must always reflect the newest commit on main. Serialise runs per
+# branch and cancel any in-flight run so two closely-landed merges cannot
+# finish out of order and leave staging on a stale build.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   deploy-staging:
     name: Deploy to Staging
