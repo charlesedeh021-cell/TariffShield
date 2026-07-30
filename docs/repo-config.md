@@ -58,3 +58,15 @@ gh api repos/vjuliaife/TariffShield/branches/main/protection
 5. Enable **Require conversation resolution before merging**
 6. Enable **Do not allow bypassing the above settings**
 7. Save changes
+
+## Dependabot auto-merge
+
+`.github/workflows/dependabot-automerge.yml` enables auto-merge on Dependabot PRs so patch bumps land without manual review. Branch protection still applies — auto-merge only completes once every required status check above passes.
+
+| Setting | Value | Why |
+|---------|-------|-----|
+| Actor condition | `github.actor == 'dependabot[bot]'` | Only Dependabot PRs are eligible. |
+| Update-type condition | `version-update:semver-patch` | Minor and major bumps stay manual. |
+| `timeout-minutes` | `5` | The job only reads Dependabot metadata and makes one `gh pr merge --auto` call, so it normally finishes in seconds. The bound caps a stuck or hanging API call instead of letting the job occupy a runner until the 6-hour default limit. |
+
+The timeout bounds the *workflow job*, not the merge itself: `gh pr merge --auto` queues the merge and returns, so a PR waiting on a slow required check is unaffected by this bound. Raise the value only if the job itself starts doing more work.
