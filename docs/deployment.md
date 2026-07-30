@@ -326,6 +326,10 @@ Where `<owner>` is the GitHub organisation or user that owns the repository (low
 3. Because the image is public on GHCR, Render can pull it without additional credentials.
 4. On every merge, the `.github/workflows/docker-publish.yml` workflow pushes a new `latest` tag. Trigger a Render redeploy manually or connect a Render deploy hook to the workflow.
 
+### `latest` tag ordering
+
+The publish workflow declares a concurrency group (`${{ github.workflow }}-${{ github.ref }}`) with `cancel-in-progress: true`, so only one build per branch runs at a time. When two merges land close together, the in-flight build for the older commit is cancelled before it can push, and `latest` is only ever written by the newest run. Cancelled runs still leave the older commit's `<short-sha>` tag unpublished — pull by SHA tag only for commits whose build completed.
+
 ### Rolling back to a previous image
 
 Each push also tags the image with the short commit SHA. To roll back:
