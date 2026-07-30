@@ -33,6 +33,7 @@ These environment variables are validated at startup via Zod in [env.ts](file://
 | `PORT` | No (default: `3002`) | Port the Express API server listens on | `3002` |
 | `NODE_ENV` | No (default: `development`) | Runtime environment: `development`, `production`, `test` | `production` |
 | `DATABASE_URL` | **Yes** | Connection string for PostgreSQL database | `postgres://user:pass@host:5432/db?sslmode=require` |
+| `REDIS_URL` | No (default: `redis://localhost:6379`) | Redis connection string, shared by the BullMQ job queue and the on-chain account state cache (#246 — `GET /importers/:id`, 30s TTL) | `redis://user:pass@host:6379` |
 | `FRONTEND_ORIGIN` | No (default: `http://localhost:3000`) | CORS allowed origin for client browsers | `https://tariffshield.vercel.app` |
 | `JWT_SECRET` | **Yes** | 32+ character HMAC key for signing JWT tokens | `super-secret-jwt-key-at-least-32-chars-long` |
 | `STELLAR_NETWORK` | No (default: `testnet`) | Network to target: `testnet` or `public` | `testnet` |
@@ -335,3 +336,20 @@ ghcr.io/<owner>/tariffshield-api:<previous-sha>
 ```
 
 Or redeploy from the Render **Events** tab as described in the rollback section above.
+
+## 10. Notifications
+
+`.github/workflows/deploy-api.yml` (production API deploy) and `.github/workflows/preview-deploy.yml` (Vercel PR previews) post to Slack on every deploy outcome, so the team doesn't have to manually check the Render or Vercel dashboards.
+
+### Setup
+
+1. In Slack, create an **Incoming Webhook** for the `#tariffshield-deploys` channel (Slack App settings → Incoming Webhooks → Add New Webhook to Workspace).
+2. Add the webhook URL as a GitHub Actions repository secret named `SLACK_DEPLOY_WEBHOOK_URL` (Settings → Secrets and variables → Actions).
+3. No further configuration is needed — both workflows already reference the secret.
+
+### What gets posted
+
+- **Success**: service name, environment (`production` for the API deploy, `preview` for Vercel previews), the deployed git SHA (short, 7 chars), the GitHub username that triggered the deploy, and a link — the preview URL for Vercel previews, or the health-check URL for the API deploy. A button links straight to the GitHub Actions run.
+- **Failure**: an `@here`-mentioning message (red sidebar) with the same SHA/actor context and a link to the failed run, so failures aren't missed.
+
+Message layout is defined in [`.github/slack/deploy-success.json`](../.github/slack/deploy-success.json) and [`.github/slack/deploy-failure.json`](../.github/slack/deploy-failure.json) as Slack Block Kit payloads (via `slackapi/slack-github-action` with `payload-templated: true`), not plain text, so they render as structured, readable cards in Slack.

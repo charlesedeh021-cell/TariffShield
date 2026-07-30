@@ -1,31 +1,118 @@
-import { Pool, type QueryResult, type QueryResultRow } from "pg";
-import pino from "pino";
-import client from "prom-client";
-import { env } from "./config/env.js";
+import { Pool, type QueryResult, type QueryResultRow } from 'pg';
+import pino from 'pino';
+import client from 'prom-client';
+import { env } from './config/env.js';
 
-const logger = pino({ name: "db" });
+const logger = pino({ name: 'db' });
 
 const url = new URL(env.DATABASE_URL);
-const sslRequired = url.searchParams.get("sslmode") === "require";
+const sslRequired = url.searchParams.get('sslmode') === 'require';
 
+// Pool sizing (#241): max=20 by default caps concurrent connections well
+// under PostgreSQL's default max_connections=100, leaving headroom for
+// other API instances, migrations, and admin/monitoring connections when
+// running multiple replicas. idleTimeoutMillis recycles idle clients so
+// they don't sit open indefinitely; connectionTimeoutMillis fails fast
+// instead of queuing forever when the pool is saturated; statement_timeout
+// guards against a single runaway query holding a connection (and
+// blocking the pool) indefinitely.
 const basePool = new Pool({
   connectionString: env.DATABASE_URL,
   ssl: sslRequired ? { rejectUnauthorized: false } : undefined,
+  max: env.PG_POOL_MAX,
+  idleTimeoutMillis: env.PG_IDLE_TIMEOUT_MS,
+  connectionTimeoutMillis: env.PG_CONN_TIMEOUT_MS,
+  statement_timeout: env.PG_STATEMENT_TIMEOUT_MS,
+  application_name: 'tariffshield-api',
 });
+
+// ── Pool monitoring (#264) ────────────────────────────────────────────────────
+
+export const pgPoolEventsTotal = new client.Counter({
+  name: 'pg_pool_events_total',
+  help: 'Total count of PostgreSQL pool lifecycle events',
+  labelNames: ['event'],
+});
+
+// Gauges read the pool's own counters on scrape rather than being tracked by
+// hand — `pool.totalCount`/`idleCount`/`waitingCount` are always the source
+// of truth, so there's no risk of manual increment/decrement drift.
+new client.Gauge({
+  name: 'pg_pool_active',
+  help: 'Number of PostgreSQL pool clients currently checked out (in use)',
+  collect() {
+    this.set(basePool.totalCount - basePool.idleCount);
+  },
+});
+
+new client.Gauge({
+  name: 'pg_pool_idle',
+  help: 'Number of idle PostgreSQL pool clients available for reuse',
+  collect() {
+    this.set(basePool.idleCount);
+  },
+});
+
+new client.Gauge({
+  name: 'pg_pool_waiting',
+  help: 'Number of queued requests waiting for a PostgreSQL pool client',
+  collect() {
+    this.set(basePool.waitingCount);
+  },
+});
+
+basePool.on('connect', () => pgPoolEventsTotal.inc({ event: 'connect' }));
+basePool.on('acquire', () => pgPoolEventsTotal.inc({ event: 'acquire' }));
+basePool.on('remove', () => pgPoolEventsTotal.inc({ event: 'remove' }));
+basePool.on('error', (err) => {
+  pgPoolEventsTotal.inc({ event: 'error' });
+  logger.error({ err }, 'PostgreSQL pool error (idle client)');
+});
+
+// Alert when the pool is under sustained exhaustion pressure: waitingCount > 5
+// for more than 10 consecutive seconds. Checked every second; resets the
+// streak the moment waitingCount drops back to <= 5, and only logs once per
+// breach (not on every tick past 10s) to avoid alert spam.
+const WAITING_ALERT_THRESHOLD = 5;
+const WAITING_ALERT_DURATION_MS = 10_000;
+const POOL_CHECK_INTERVAL_MS = 1_000;
+let waitingBreachSince: number | null = null;
+let waitingAlertFired = false;
+
+const poolInterval = setInterval(() => {
+  const waiting = basePool.waitingCount;
+  if (waiting > WAITING_ALERT_THRESHOLD) {
+    if (waitingBreachSince === null) {
+      waitingBreachSince = Date.now();
+    } else if (!waitingAlertFired && Date.now() - waitingBreachSince >= WAITING_ALERT_DURATION_MS) {
+      waitingAlertFired = true;
+      logger.error(
+        { waiting, thresholdSeconds: WAITING_ALERT_DURATION_MS / 1000 },
+        `PostgreSQL pool exhaustion: ${waiting} requests waiting for >${WAITING_ALERT_DURATION_MS / 1000}s`
+      );
+    }
+  } else {
+    waitingBreachSince = null;
+    waitingAlertFired = false;
+  }
+}, POOL_CHECK_INTERVAL_MS);
+if (typeof poolInterval.unref === "function") {
+  poolInterval.unref();
+}
 
 // ── Prometheus metrics (#373) ─────────────────────────────────────────────────
 
 export const dbQueryDurationSeconds = new client.Histogram({
-  name: "db_query_duration_seconds",
-  help: "Duration of PostgreSQL queries in seconds",
-  labelNames: ["query_name"],
+  name: 'db_query_duration_seconds',
+  help: 'Duration of PostgreSQL queries in seconds',
+  labelNames: ['query_name'],
   buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
 });
 
 export const dbSlowQueriesTotal = new client.Counter({
-  name: "db_slow_queries_total",
-  help: "Total number of slow PostgreSQL queries",
-  labelNames: ["threshold"],
+  name: 'db_slow_queries_total',
+  help: 'Total number of slow PostgreSQL queries',
+  labelNames: ['threshold'],
 });
 
 // ── Query timing wrapper ──────────────────────────────────────────────────────
@@ -36,21 +123,23 @@ const SQL_TRUNCATE_LEN = 500;
 
 function sanitizeSql(sql: string): string {
   return sql
-    .replace(/\$\d+/g, "?")
+    .replace(/\$\d+/g, '?')
     .replace(/'[^']*'/g, "'?'")
     .slice(0, SQL_TRUNCATE_LEN);
 }
 
 function inferQueryName(sql: string): string {
   const s = sql.trim().toUpperCase();
-  const m = s.match(/^(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER)\s+(?:INTO\s+|FROM\s+|TABLE\s+)?(\w+)?/);
-  return m ? `${m[1]!.toLowerCase()}${m[2] ? `_${m[2]!.toLowerCase()}` : ""}` : "unknown";
+  const m = s.match(
+    /^(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER)\s+(?:INTO\s+|FROM\s+|TABLE\s+)?(\w+)?/
+  );
+  return m ? `${m[1]!.toLowerCase()}${m[2] ? `_${m[2]!.toLowerCase()}` : ''}` : 'unknown';
 }
 
 async function timedQuery<R extends QueryResultRow = QueryResultRow>(
   sql: string,
   values?: unknown[],
-  queryName?: string,
+  queryName?: string
 ): Promise<QueryResult<R>> {
   const start = Date.now();
   const name = queryName ?? inferQueryName(sql);
@@ -62,16 +151,16 @@ async function timedQuery<R extends QueryResultRow = QueryResultRow>(
     endTimer();
 
     if (durationMs >= SLOW_ERROR_MS) {
-      dbSlowQueriesTotal.inc({ threshold: "2000ms" });
+      dbSlowQueriesTotal.inc({ threshold: '2000ms' });
       logger.error(
         { query: sanitizeSql(sql), durationMs, rowCount: result.rowCount, caller: name },
-        "critically slow query",
+        'critically slow query'
       );
     } else if (durationMs >= SLOW_WARN_MS) {
-      dbSlowQueriesTotal.inc({ threshold: "500ms" });
+      dbSlowQueriesTotal.inc({ threshold: '500ms' });
       logger.warn(
         { query: sanitizeSql(sql), durationMs, rowCount: result.rowCount, caller: name },
-        "slow query",
+        'slow query'
       );
     }
 
@@ -84,12 +173,39 @@ async function timedQuery<R extends QueryResultRow = QueryResultRow>(
 
 export const pool = {
   query: timedQuery,
+  connect: () => basePool.connect(),
   end: () => basePool.end(),
 };
+
+export interface PoolStats {
+  totalCount: number;
+  idleCount: number;
+  waitingCount: number;
+}
+
+/**
+ * Snapshot of the pool's own connection counters, for the /health/db
+ * endpoint (#241). These are always the source of truth — see the
+ * Prometheus gauges above, which read the same values on scrape.
+ */
+export function getPoolStats(): PoolStats {
+  return {
+    totalCount: basePool.totalCount,
+    idleCount: basePool.idleCount,
+    waitingCount: basePool.waitingCount,
+  };
+}
 
 // ── Schema migrations ─────────────────────────────────────────────────────────
 
 export async function migrate(): Promise<void> {
+  const { runMigrations } = await import("./migrations/runner.js");
+  await runMigrations("up");
+}
+
+export async function rollback(): Promise<void> {
+  const { runMigrations } = await import("./migrations/runner.js");
+  await runMigrations("rollback");
   await timedQuery(
     `
     CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -109,6 +225,12 @@ export async function migrate(): Promise<void> {
       user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
       legal_name TEXT NOT NULL,
       ein TEXT,
+      -- #243: SHA-256 hex digest of ein, for PII-safe equality lookups
+      -- (dedup checks, lookup-by-ein) without exposing the plaintext value.
+      -- ein itself is scheduled for encryption (see the ein_encrypted /
+      -- ein_key_version columns below, from the AES-GCM field-encryption
+      -- work) — ein_hash lets lookups keep working once that lands.
+      ein_hash TEXT,
       bond_id BIGINT UNIQUE NOT NULL,
       stellar_address TEXT NOT NULL,
       stellar_secret_encrypted TEXT,
@@ -138,6 +260,24 @@ export async function migrate(): Promise<void> {
     );
 
     CREATE INDEX IF NOT EXISTS idx_contract_events_importer ON contract_events(importer_id, created_at DESC);
+    -- #227: compound index for kind-filtered event queries (deposit, withdrawal, clawback, etc.)
+    -- The existing idx_contract_events_importer covers queries without a kind filter;
+    -- this index adds kind as the second column for efficient type-specific lookups.
+    CREATE INDEX IF NOT EXISTS idx_contract_events_importer_kind ON contract_events(importer_id, kind, created_at DESC);
+
+    -- #248: B-tree index on contract_events (importer_id, id DESC) to support high-performance cursor-based pagination.
+    CREATE INDEX IF NOT EXISTS idx_contract_events_importer_id_pagination ON contract_events(importer_id, id DESC);
+
+    -- #245: BRIN index on contract_events.created_at for time-range queries.
+    -- A B-tree index stores pointers for every single row and becomes extremely large at scale.
+    -- A BRIN (Block Range Index) index summarizes block ranges (minimum/maximum timestamps per range of pages),
+    -- resulting in a footprint that is orders of magnitude smaller (typically ~1:800 or 99.8% smaller).
+    -- pages_per_range is set to 32 (down from default 128) to provide finer search granularity,
+    -- which is highly effective for chronologically ordered event logs under high-volume ingestion.
+    -- If contract_events is partitioned by month (Issue #228), parent indexes automatically propagate
+    -- to all child partitions.
+    CREATE INDEX IF NOT EXISTS idx_contract_events_created_at_brin ON contract_events USING BRIN (created_at) WITH (pages_per_range = 32);
+
 
     ALTER TABLE contract_events ADD COLUMN IF NOT EXISTS ledger_sequence INTEGER;
     ALTER TABLE contract_events ADD COLUMN IF NOT EXISTS event_index INTEGER;
@@ -372,6 +512,19 @@ export async function migrate(): Promise<void> {
     ALTER TABLE importers ADD COLUMN IF NOT EXISTS ein_encrypted TEXT;
     ALTER TABLE importers ADD COLUMN IF NOT EXISTS ein_key_version INTEGER REFERENCES field_encryption_key_versions(key_version);
 
+    -- #243: ein_hash for PII-safe equality lookups (see the importers table
+    -- comment above). Partial unique index — NULL eins (optional field)
+    -- never collide with each other or force uniqueness.
+    ALTER TABLE importers ADD COLUMN IF NOT EXISTS ein_hash TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_importers_ein_hash ON importers(ein_hash) WHERE ein_hash IS NOT NULL;
+
+    -- One-time backfill: compute ein_hash for any pre-existing row that has
+    -- a plaintext ein but no hash yet. Safe to re-run — only touches rows
+    -- still missing ein_hash.
+    UPDATE importers
+      SET ein_hash = encode(sha256(ein::bytea), 'hex')
+      WHERE ein IS NOT NULL AND ein_hash IS NULL;
+
     -- #318: regulatory compliance flags
     CREATE TABLE IF NOT EXISTS compliance_flags (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -523,18 +676,351 @@ export async function migrate(): Promise<void> {
 
     ALTER TABLE bond_records ADD COLUMN IF NOT EXISTS state_code TEXT NOT NULL DEFAULT 'CA';
     ALTER TABLE importers ADD COLUMN IF NOT EXISTS business_state TEXT NOT NULL DEFAULT 'CA';
+
+    -- #251: surety-dashboard aggregate statistics, pre-computed instead of a
+    -- live GROUP BY over importers/bond_records/contract_events on every
+    -- page load. See apps/api/migrations/002_importer_metrics_mv.sql for the
+    -- full metric-definition rationale.
+    CREATE MATERIALIZED VIEW IF NOT EXISTS importer_metrics_mv AS
+    SELECT
+      1 AS singleton_id,
+      (SELECT COUNT(*) FROM importers) AS total_importers,
+      (SELECT COALESCE(SUM(bond_amount), 0) FROM bond_records) AS total_bond_value,
+      (SELECT ROUND(COALESCE(AVG(collateral_balance), 0)) FROM importers) AS avg_balance,
+      (
+        SELECT CASE WHEN COUNT(*) = 0 THEN 100.0
+          ELSE ROUND(100.0 * COUNT(*) FILTER (WHERE bond_amount >= cbp_minimum_required) / COUNT(*), 2)
+        END
+        FROM bond_records
+      ) AS compliance_rate,
+      (
+        SELECT COUNT(*) FROM contract_events
+        WHERE kind IN ('deposit_collateral', 'deposit_reserve', 'auto_top_up')
+          AND created_at >= now() - INTERVAL '30 days'
+      ) AS topup_count_30d,
+      now() AS refreshed_at;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_importer_metrics_mv_singleton
+      ON importer_metrics_mv (singleton_id);
+
+    ALTER TABLE importers ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+    CREATE MATERIALIZED VIEW IF NOT EXISTS importer_metrics AS
+    SELECT
+      i.id AS importer_id,
+      i.legal_name,
+      i.stellar_address,
+      COALESCE(t.latest_required_collateral, 0) AS required_collateral,
+      COALESCE(
+        SUM(CASE WHEN ce.kind IN ('deposit', 'deposit_collateral', 'deposit_reserve') THEN ce.amount ELSE 0 END) -
+        SUM(CASE WHEN ce.kind IN ('withdrawal', 'withdraw') THEN ce.amount ELSE 0 END), 0
+      ) AS current_balance,
+      COALESCE(t.latest_annual_duty_total, 0) AS annual_duty_total,
+      CASE WHEN COALESCE(t.latest_required_collateral, 0) > 0
+        THEN ROUND(
+          (SUM(CASE WHEN ce.kind IN ('deposit', 'deposit_collateral', 'deposit_reserve') THEN ce.amount ELSE 0 END) -
+           SUM(CASE WHEN ce.kind IN ('withdrawal', 'withdraw') THEN ce.amount ELSE 0 END))::NUMERIC
+          / t.latest_required_collateral, 4)
+        ELSE NULL END AS coverage_ratio,
+      now() AS refreshed_at
+    FROM importers i
+    LEFT JOIN LATERAL (
+      SELECT annual_duty_total AS latest_annual_duty_total,
+             computed_required_collateral AS latest_required_collateral
+      FROM tariff_uploads WHERE importer_id = i.id ORDER BY created_at DESC LIMIT 1
+    ) t ON true
+    LEFT JOIN contract_events ce ON ce.importer_id = i.id
+    WHERE i.deleted_at IS NULL
+    GROUP BY i.id, i.legal_name, i.stellar_address,
+             t.latest_annual_duty_total, t.latest_required_collateral;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_importer_metrics_importer_id
+      ON importer_metrics (importer_id);
+
+    -- Prevent UPDATE and DELETE on audit_log via row-level security
+    ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
+    CREATE POLICY audit_log_no_update ON audit_log FOR UPDATE USING (false);
+    CREATE POLICY audit_log_no_delete ON audit_log FOR DELETE USING (false);
+
+    -- #232: bonds — full bond lifecycle tracking (supersedes importers.bond_id)
+    -- NOTE: importers.bond_id is deprecated and retained for backward compatibility.
+    -- All new bond queries should use the bonds table instead.
+    CREATE TABLE IF NOT EXISTS bonds (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      importer_id UUID NOT NULL REFERENCES importers(id) ON DELETE CASCADE,
+      bond_number BIGINT NOT NULL,
+      policy_type TEXT NOT NULL DEFAULT 'continuous' CHECK (policy_type IN ('continuous', 'single_entry', 'term')),
+      coverage_amount NUMERIC(20, 2) NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('pending', 'active', 'expired', 'cancelled', 'replaced')),
+      issued_at TIMESTAMPTZ,
+      expires_at TIMESTAMPTZ,
+      replaced_by_id UUID REFERENCES bonds(id),
+      stellar_contract_address TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_bonds_bond_number ON bonds(bond_number);
+    CREATE INDEX IF NOT EXISTS idx_bonds_importer_status ON bonds(importer_id, status, created_at DESC);
+
+    -- Migrate existing importers.bond_id values into bonds table
+    INSERT INTO bonds (importer_id, bond_number, policy_type, coverage_amount, status, issued_at, created_at)
+    SELECT id, bond_id, 'continuous', 0, 'active', created_at, created_at
+    FROM importers
+    WHERE NOT EXISTS (SELECT 1 FROM bonds WHERE bond_number = importers.bond_id);
+
+    -- #235: refresh_tokens — JWT refresh token flow with server-side revocation
+    CREATE TABLE IF NOT EXISTS refresh_tokens (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      revoked_at TIMESTAMPTZ,
+      replaced_by_id UUID REFERENCES refresh_tokens(id),
+      user_agent TEXT,
+      ip_address INET,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_refresh_tokens_hash ON refresh_tokens(token_hash) WHERE revoked_at IS NULL;
+
+    -- #234: documents — bond application PDF storage metadata (CBP Form 301,
+    -- power of attorney, commercial invoices, KYC ID, etc). Stores a reference
+    -- to the object-storage location, not the file bytes. Distinct from
+    -- kyc_documents (#312) below, which is specifically compliance
+    -- paperwork (articles of incorporation, EIN confirmation, beneficial
+    -- ownership) under its own retention/review workflow.
+    CREATE TABLE IF NOT EXISTS documents (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      importer_id UUID NOT NULL REFERENCES importers(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK (kind IN ('cbp_301', 'power_of_attorney', 'commercial_invoice', 'kyc_id', 'other')),
+      filename TEXT NOT NULL,
+      url TEXT NOT NULL,
+      mime_type TEXT,
+      size_bytes BIGINT,
+      uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL,
+      expires_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_documents_importer_kind ON documents(importer_id, kind, created_at DESC);
+
+    -- #244: importer_documents_view — joins importers with kyc_documents and
+    -- kyc_status in a single query for the surety admin review workflow, so
+    -- every API handler that touches the review flow doesn't need to
+    -- duplicate the JOIN. Depends on: kyc_status (#229), kyc_documents
+    -- (#234), and ein_hash (#243) — all already applied above.
+    -- importers.deleted_at (added by the importer_metrics work above) is
+    -- now filtered on too, so soft-deleted importers never appear in admin
+    -- review; kyc_documents' own deleted_at (its retention-schedule
+    -- deletion, unrelated to importer soft-delete) is filtered separately
+    -- so retention-expired documents don't appear either.
+    -- A plain view, not materialized — reads always reflect current data,
+    -- no refresh job needed (unlike importer_metrics_mv/importer_metrics above).
+    CREATE OR REPLACE VIEW importer_documents_view AS
+    SELECT
+      i.id AS importer_id,
+      i.legal_name,
+      i.ein_hash,
+      i.bond_id,
+      i.stellar_address,
+      i.kyc_status,
+      i.created_at AS importer_created_at,
+      d.id AS document_id,
+      d.document_type,
+      d.review_status AS document_review_status,
+      d.reviewer_id,
+      d.reviewer_note,
+      d.reviewed_at AS document_reviewed_at,
+      d.scheduled_deletion_date AS document_scheduled_deletion_date,
+      d.created_at AS document_created_at
+    FROM importers i
+    LEFT JOIN kyc_documents d
+      ON d.importer_id = i.id AND d.deleted_at IS NULL
+    WHERE i.deleted_at IS NULL;
   `,
     undefined,
-    "migrate_schema",
+    'migrate_schema'
   );
   logger.info("schema ready");
 }
 
+// ── importer_metrics_mv (#251) ────────────────────────────────────────────────
+
+export interface ImporterMetrics {
+  totalImporters: number;
+  totalBondValue: string;
+  avgBalance: string;
+  complianceRate: number;
+  topupCount30d: number;
+  refreshedAt: string;
+}
+
+/**
+ * Read the pre-computed dashboard statistics from importer_metrics_mv.
+ * Backed by a unique index on the (single-row) view, so this is a fast
+ * indexed lookup rather than a live aggregate — target < 5ms p95.
+ */
+export async function getImporterMetrics(): Promise<ImporterMetrics> {
+  const result = await timedQuery<{
+    total_importers: number;
+    total_bond_value: string;
+    avg_balance: string;
+    compliance_rate: string;
+    topup_count_30d: number;
+    refreshed_at: Date;
+  }>(
+    'SELECT * FROM importer_metrics_mv WHERE singleton_id = 1',
+    undefined,
+    'select_importer_metrics_mv'
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    return {
+      totalImporters: 0,
+      totalBondValue: '0',
+      avgBalance: '0',
+      complianceRate: 100,
+      topupCount30d: 0,
+      refreshedAt: new Date(0).toISOString(),
+    };
+  }
+
+  return {
+    totalImporters: row.total_importers,
+    totalBondValue: row.total_bond_value,
+    avgBalance: row.avg_balance,
+    complianceRate: Number(row.compliance_rate),
+    topupCount30d: row.topup_count_30d,
+    refreshedAt: row.refreshed_at.toISOString(),
+  };
+}
+
+/**
+ * Refresh importer_metrics_mv without blocking concurrent reads.
+ * Requires the unique index created alongside the view (see migrate()).
+ */
+export async function refreshImporterMetrics(): Promise<void> {
+  await timedQuery(
+    'REFRESH MATERIALIZED VIEW CONCURRENTLY importer_metrics_mv',
+    undefined,
+    'refresh_importer_metrics_mv'
+  );
+}
+
+/**
+ * Refresh the importer_metrics materialized view concurrently without blocking reads.
+ *
+ * Refresh Cadence:
+ * - Triggered on-demand inside the tariff upload POST handler (`/importers/:id/upload-tariff-csv`).
+ * - Can also be run on a background timer or cron (e.g. every 5 minutes) to sync async
+ *   on-chain ledger events (deposits, withdrawals, clawbacks).
+ *
+ * Staleness Window:
+ * - Near-zero latency for tariff upload mutations since refresh is triggered immediately.
+ * - Up to 5 minutes latency (or since last indexer run) for on-chain events if relying on periodic refresh.
+ */
+export async function refreshImporterMetricsView(): Promise<void> {
+  await timedQuery(
+    "REFRESH MATERIALIZED VIEW CONCURRENTLY importer_metrics",
+    undefined,
+    "refresh_importer_metrics",
+  );
+}
+
+// ── importer_documents_view (#244) ─────────────────────────────────────────────
+
+export interface ImporterDocumentRow {
+  documentId: string;
+  documentType: string;
+  reviewStatus: string;
+  reviewerId: string | null;
+  reviewerNote: string | null;
+  reviewedAt: string | null;
+  scheduledDeletionDate: string;
+  createdAt: string;
+}
+
+export interface ImporterReview {
+  importerId: string;
+  legalName: string;
+  einHash: string | null;
+  bondId: string;
+  stellarAddress: string;
+  kycStatus: string;
+  importerCreatedAt: string;
+  documents: ImporterDocumentRow[];
+}
+
+/**
+ * Fetch a single importer's profile plus every kyc_documents row attached to
+ * it, from importer_documents_view — one query instead of the API handler
+ * doing its own JOIN. Returns null if no importer with this id exists.
+ * An importer with zero documents still returns (with documents: []) — the
+ * view's LEFT JOIN produces a single row with all document_* fields NULL,
+ * which this function filters out via the document_id IS NOT NULL check.
+ */
+export async function getImporterReview(
+  importerId: string
+): Promise<ImporterReview | null> {
+  const result = await timedQuery<{
+    importer_id: string;
+    legal_name: string;
+    ein_hash: string | null;
+    bond_id: string;
+    stellar_address: string;
+    kyc_status: string;
+    importer_created_at: Date;
+    document_id: string | null;
+    document_type: string | null;
+    document_review_status: string | null;
+    reviewer_id: string | null;
+    reviewer_note: string | null;
+    document_reviewed_at: Date | null;
+    document_scheduled_deletion_date: Date | null;
+    document_created_at: Date | null;
+  }>(
+    'SELECT * FROM importer_documents_view WHERE importer_id = $1',
+    [importerId],
+    'select_importer_documents_view'
+  );
+
+  const first = result.rows[0];
+  if (!first) {
+    return null;
+  }
+
+  const documents: ImporterDocumentRow[] = result.rows
+    .filter((row) => row.document_id !== null)
+    .map((row) => ({
+      documentId: row.document_id as string,
+      documentType: row.document_type as string,
+      reviewStatus: row.document_review_status as string,
+      reviewerId: row.reviewer_id,
+      reviewerNote: row.reviewer_note,
+      reviewedAt: row.document_reviewed_at?.toISOString() ?? null,
+      scheduledDeletionDate: (row.document_scheduled_deletion_date as Date).toISOString(),
+      createdAt: (row.document_created_at as Date).toISOString(),
+    }));
+
+  return {
+    importerId: first.importer_id,
+    legalName: first.legal_name,
+    einHash: first.ein_hash,
+    bondId: first.bond_id,
+    stellarAddress: first.stellar_address,
+    kycStatus: first.kyc_status,
+    importerCreatedAt: first.importer_created_at.toISOString(),
+    documents,
+  };
+}
+
 export async function getLastProcessedLedger(): Promise<number | null> {
   const result = await timedQuery<{ last_processed_ledger: number }>(
-    "SELECT last_processed_ledger FROM indexer_state WHERE id = $1",
-    ["default"],
-    "select_indexer_state",
+    'SELECT last_processed_ledger FROM indexer_state WHERE id = $1',
+    ['default'],
+    'select_indexer_state'
   );
   if (!result.rowCount || result.rowCount === 0) {
     return null;
@@ -549,8 +1035,8 @@ export async function updateLastProcessedLedger(ledger: number): Promise<void> {
      ON CONFLICT (id) DO UPDATE
      SET last_processed_ledger = EXCLUDED.last_processed_ledger,
          updated_at = now()`,
-    ["default", ledger],
-    "upsert_indexer_state",
+    ['default', ledger],
+    'upsert_indexer_state'
   );
 }
 
@@ -558,15 +1044,21 @@ export async function updateLastProcessedLedger(ledger: number): Promise<void> {
  * Pings the database to check if it's alive.
  */
 export async function ping(): Promise<void> {
-  await pool.query("SELECT 1");
+  await pool.query('SELECT 1');
 }
 
 /**
  * Returns all bonds that have been registered on-chain.
  */
-export async function getActiveBonds(): Promise<{ bondId: string; stellarAddress: string; dbBalance: string }[]> {
-  const result = await pool.query<{ bond_id: string; stellar_address: string; collateral_balance: string }>(
-    "SELECT bond_id, stellar_address, collateral_balance FROM importers WHERE registered_on_chain_tx IS NOT NULL"
+export async function getActiveBonds(): Promise<
+  { bondId: string; stellarAddress: string; dbBalance: string }[]
+> {
+  const result = await pool.query<{
+    bond_id: string;
+    stellar_address: string;
+    collateral_balance: string;
+  }>(
+    'SELECT bond_id, stellar_address, collateral_balance FROM importers WHERE registered_on_chain_tx IS NOT NULL'
   );
   return result.rows.map((row) => ({
     bondId: row.bond_id,
@@ -580,54 +1072,60 @@ export async function recordAuthenticationAttempt(
   success: boolean,
   userId?: string,
   ipAddress?: string,
-  userAgent?: string,
+  userAgent?: string
 ): Promise<void> {
   await timedQuery(
     `INSERT INTO authentication_attempts (email, success, user_id, ip_address, user_agent)
      VALUES ($1, $2, $3, $4, $5)`,
     [email, success, userId ?? null, ipAddress ?? null, userAgent ?? null],
-    "insert_auth_attempt",
+    'insert_auth_attempt'
   );
 }
 
-export async function getFailedAuthAttempts(email: string, withinMinutes: number = 30): Promise<number> {
+export async function getFailedAuthAttempts(
+  email: string,
+  withinMinutes: number = 30
+): Promise<number> {
   const result = await timedQuery<{ count: string }>(
     `SELECT COUNT(*) as count FROM authentication_attempts
      WHERE email = $1 AND success = FALSE
      AND attempted_at > now() - INTERVAL '${withinMinutes} minutes'`,
     [email],
-    "count_failed_auth_attempts",
+    'count_failed_auth_attempts'
   );
-  return parseInt(result.rows[0]?.count ?? "0", 10);
+  return parseInt(result.rows[0]?.count ?? '0', 10);
 }
 
-export async function lockAccountTemporarily(userId: string, durationMinutes: number = 30): Promise<void> {
+export async function lockAccountTemporarily(
+  userId: string,
+  durationMinutes: number = 30
+): Promise<void> {
   await timedQuery(
     `UPDATE users SET locked_until = now() + INTERVAL '${durationMinutes} minutes'
      WHERE id = $1`,
     [userId],
-    "lock_account",
+    'lock_account'
   );
 }
 
 export async function recordSecurityIncident(
-  severity: "P0" | "P1" | "P2" | "P3",
+  severity: 'P0' | 'P1' | 'P2' | 'P3',
   description: string,
-  affectedScope?: string,
+  affectedScope?: string
 ): Promise<string> {
   const incidentId = `INC-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   const result = await timedQuery<{ id: string }>(
     `INSERT INTO security_incidents (incident_id, severity, description, affected_scope)
      VALUES ($1, $2, $3, $4) RETURNING id`,
     [incidentId, severity, description, affectedScope ?? null],
-    "insert_security_incident",
+    'insert_security_incident'
   );
-  return result.rows[0]?.id ?? "";
+  return result.rows[0]?.id ?? '';
 }
 
 export async function createDataErasureRequest(
   userId: string,
-  importerId?: string,
+  importerId?: string
 ): Promise<string> {
   const requestId = `ERASE-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   const slaDealine = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -636,9 +1134,9 @@ export async function createDataErasureRequest(
      VALUES ($1, $2, $3, $4, ARRAY['legal_name', 'ein', 'email'])
      RETURNING id`,
     [requestId, userId, importerId ?? null, slaDealine],
-    "insert_erasure_request",
+    'insert_erasure_request'
   );
-  return result.rows[0]?.id ?? "";
+  return result.rows[0]?.id ?? '';
 }
 
 // ── SOC 2 CC6 — Session management (#306) ────────────────────────────────────
@@ -648,13 +1146,13 @@ const SESSION_INACTIVITY_MINUTES = 15;
 export async function createSession(
   userId: string,
   ipAddress?: string,
-  userAgent?: string,
+  userAgent?: string
 ): Promise<string> {
   const result = await timedQuery<{ id: string }>(
     `INSERT INTO user_sessions (user_id, ip_address, user_agent)
      VALUES ($1, $2, $3) RETURNING id`,
     [userId, ipAddress ?? null, userAgent ?? null],
-    "insert_user_session",
+    'insert_user_session'
   );
   return result.rows[0]!.id;
 }
@@ -666,24 +1164,24 @@ export async function validateSession(sessionId: string): Promise<boolean> {
        AND revoked_at IS NULL
        AND last_activity > now() - INTERVAL '${SESSION_INACTIVITY_MINUTES} minutes'`,
     [sessionId],
-    "validate_user_session",
+    'validate_user_session'
   );
   return (result.rowCount ?? 0) > 0;
 }
 
 export function touchSession(sessionId: string): void {
   timedQuery(
-    "UPDATE user_sessions SET last_activity = now() WHERE id = $1 AND revoked_at IS NULL",
+    'UPDATE user_sessions SET last_activity = now() WHERE id = $1 AND revoked_at IS NULL',
     [sessionId],
-    "touch_user_session",
+    'touch_user_session'
   ).catch(() => {});
 }
 
 export async function revokeSession(sessionId: string): Promise<void> {
   await timedQuery(
-    "UPDATE user_sessions SET revoked_at = now() WHERE id = $1",
+    'UPDATE user_sessions SET revoked_at = now() WHERE id = $1',
     [sessionId],
-    "revoke_user_session",
+    'revoke_user_session'
   );
 }
 
@@ -693,9 +1191,9 @@ export async function getActiveSessionCount(userId: string): Promise<number> {
      WHERE user_id = $1 AND revoked_at IS NULL
        AND last_activity > now() - INTERVAL '${SESSION_INACTIVITY_MINUTES} minutes'`,
     [userId],
-    "count_active_sessions",
+    'count_active_sessions'
   );
-  return parseInt(result.rows[0]?.count ?? "0", 10);
+  return parseInt(result.rows[0]?.count ?? '0', 10);
 }
 
 export async function revokeOldestSession(userId: string): Promise<void> {
@@ -708,12 +1206,102 @@ export async function revokeOldestSession(userId: string): Promise<void> {
        LIMIT 1
      )`,
     [userId],
-    "revoke_oldest_session",
+    'revoke_oldest_session'
   );
 }
 
+// ── #231: Audit log helper ──────────────────────────────────────────────────
+
+export async function logAudit(
+  actorUserId: string | null,
+  action: string,
+  targetId: string | null,
+  payload: Record<string, unknown> | null,
+): Promise<void> {
+  await timedQuery(
+    `INSERT INTO audit_log (actor_user_id, action, target_id, payload)
+     VALUES ($1, $2, $3, $4)`,
+    [actorUserId, action, targetId, payload ? JSON.stringify(payload) : null],
+    "insert_audit_log",
+  );
+}
+
+// ── #230: Notification helper ─────────────────────────────────────────────────
+//
+// Shared by any router that needs to raise an in-app notification for a user
+// (routes/notifications.ts doesn't call this itself — it only reads/updates
+// existing rows — but routes that produce the underlying events, like
+// routes/importers.ts, do), mirroring how logAudit above is shared the same
+// way for audit_log.
+export async function createNotification(userId: string, kind: string, message: string): Promise<void> {
+  await timedQuery(
+    `INSERT INTO notifications (user_id, kind, message)
+     VALUES ($1, $2, $3)`,
+    [userId, kind, message],
+    "insert_notification",
+  );
+}
+
+// ── #235: Refresh token helpers ─────────────────────────────────────────────
+
+export async function createRefreshToken(
+  userId: string,
+  tokenHash: string,
+  expiresAt: Date,
+  userAgent?: string,
+  ipAddress?: string,
+): Promise<string> {
+  const result = await timedQuery<{ id: string }>(
+    `INSERT INTO refresh_tokens (user_id, token_hash, expires_at, user_agent, ip_address)
+     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+    [userId, tokenHash, expiresAt, userAgent ?? null, ipAddress ?? null],
+    "insert_refresh_token",
+  );
+  return result.rows[0]!.id;
+}
+
+export async function validateRefreshToken(
+  tokenHash: string,
+): Promise<{ id: string; userId: string; expiresAt: Date } | null> {
+  const result = await timedQuery<{ id: string; user_id: string; expires_at: Date }>(
+    `SELECT id, user_id, expires_at FROM refresh_tokens
+     WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now()`,
+    [tokenHash],
+    "validate_refresh_token",
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return { id: row.id, userId: row.user_id, expiresAt: row.expires_at };
+}
+
+export async function rotateRefreshToken(
+  oldId: string,
+  newTokenHash: string,
+  newExpiresAt: Date,
+): Promise<string> {
+  const result = await timedQuery<{ user_id: string }>(
+    `UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1 RETURNING user_id`,
+    [oldId],
+    "revoke_refresh_token",
+  );
+  const userId = result.rows[0]?.user_id;
+  if (!userId) throw new Error("refresh token not found");
+
+  return createRefreshToken(userId, newTokenHash, newExpiresAt);
+}
+
+export async function revokeRefreshToken(tokenHash: string): Promise<boolean> {
+  const result = await timedQuery(
+    `UPDATE refresh_tokens SET revoked_at = now()
+     WHERE token_hash = $1 AND revoked_at IS NULL`,
+    [tokenHash],
+    "revoke_refresh_token",
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
 export async function getStaleAccounts(
-  days: number,
+  days: number
 ): Promise<Array<{ id: string; email: string; last_login: string | null }>> {
   const result = await timedQuery<{ id: string; email: string; last_login: string | null }>(
     `SELECT u.id, u.email,
@@ -726,7 +1314,7 @@ export async function getStaleAccounts(
          OR MAX(a.attempted_at) < now() - ($1::integer * INTERVAL '1 day')
       ORDER BY last_login ASC NULLS FIRST`,
     [days],
-    "select_stale_accounts",
+    'select_stale_accounts'
   );
   return result.rows;
 }

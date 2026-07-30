@@ -50,7 +50,20 @@ export interface ContractEvent {
 export interface ImporterDetail {
   importer: Importer;
   onChainAccount: OnChainAccount;
-  events: ContractEvent[];
+}
+
+export interface EventsPage {
+  data: ContractEvent[];
+  nextCursor: string | null;
+}
+
+export interface ImporterMetrics {
+  totalImporters: number;
+  totalBondValue: string;
+  avgBalance: string;
+  complianceRate: number;
+  topupCount30d: number;
+  refreshedAt: string;
 }
 
 async function request<T>(path: string, options: { method?: string; body?: unknown; auth?: boolean } = {}): Promise<T> {
@@ -84,6 +97,14 @@ export const api = {
   createImporter: (b: { legalName: string; ein?: string; bondId: number; initialRequiredCollateral: string }) =>
     request<{ importer: Importer }>("/importers", { method: "POST", body: b }),
   listImporters: () => request<{ importers: Importer[] }>("/importers"),
+  getStats: () => request<{ metrics: ImporterMetrics }>("/importers/stats"),
+  // #255: cursor-paginated event log — fetched lazily by the dashboard's
+  // infinite-scroll section instead of being inlined into getImporter().
+  getImporterEventsCursor: (id: string, cursor?: string | null, limit = 20) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (cursor) params.set("cursor", cursor);
+    return request<EventsPage>(`/importers/${id}/events?${params.toString()}`);
+  },
   prefetchImporter: (id: string) => {
     if (importerPrefetchCache.has(id)) return;
     const p = request<ImporterDetail>(`/importers/${id}`);

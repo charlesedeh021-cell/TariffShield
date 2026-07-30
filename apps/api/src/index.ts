@@ -26,10 +26,12 @@ import { privacyReacceptanceGate } from "./auth.js";
 import { complianceRouter } from "./routes/compliance.js";
 import { kycRouter } from "./routes/kyc.js";
 import { startComplianceReportScheduler } from "./jobs/compliance-report.js";
+import { startImporterMetricsScheduler } from "./jobs/refresh-importer-metrics.js";
 import { suretyLicenseRouter } from "./routes/surety-license.js";
 import { regulatoryRouter } from "./routes/regulatory.js";
 import { healthRouter } from "./routes/health.js";
 import { httpLogger, logger } from "./lib/logger.js";
+import { notificationsRouter } from "./routes/notifications.js";
 
 const app = express();
 app.use(httpLogger);
@@ -313,6 +315,7 @@ app.use("/account", privacyRouter);
 app.use("/account", tosRouter);
 app.use("/privacy", privacyRouter);
 app.use("/surety-license", suretyLicenseRouter);
+app.use("/notifications", notificationsRouter);
 app.use("/api/v1/regulatory", regulatoryRouter);
 app.use("/bonds", bondWebhookRouter);   // unauthenticated DocuSign webhook
 app.use("/api", bondSignaturesRouter);  // authenticated bond signature routes
@@ -329,12 +332,15 @@ app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
 });
 
 async function start() {
-  await migrate();
+  if (!isProduction) {
+    await migrate();
+  }
   await startIndexer();
   startReconciliationJob();
   await startOracleMonitor();
   await startOracleEventListener();
   startComplianceReportScheduler();
+  startImporterMetricsScheduler();
   app.listen(env.PORT, () => {
     logger.info({ port: env.PORT, contractId: env.TARIFF_SHIELD_CONTRACT_ID, corsAllowlist: Array.from(ALLOWED_ORIGINS) }, "tariffshield API server started");
   });
