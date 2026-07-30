@@ -256,6 +256,20 @@ Create a GitHub Actions Environment named `staging` in **Settings → Environmen
 | `VERCEL_ORG_ID` | Vercel Organization ID (can also be repository-wide). |
 | `VERCEL_PROJECT_ID` | Vercel Project ID (can also be repository-wide). |
 
+### Pinned third-party GitHub Actions
+
+`deploy-staging.yml` runs with the Vercel and Render deploy credentials in scope, so the third-party actions it uses are pinned to a full commit SHA rather than a mutable tag — a tag can be moved to new code at any time by the action's owner. The workflow itself declares only `permissions: contents: read`, so `GITHUB_TOKEN` grants nothing beyond checkout.
+
+| Action | Pinned SHA | Tag at time of pinning |
+|---|---|---|
+| `amondnet/vercel-action` | `16e87c0a08142b0d0d33b76aeaf20823c381b9b9` | `v25.2.0` (the commit `v25` pointed at) |
+
+To update: resolve the new tag to its commit and replace both the SHA and the trailing `# <tag>` comment in the workflow, then update the row above.
+
+```bash
+gh api repos/amondnet/vercel-action/git/ref/tags/<tag> --jq '.object.sha'
+```
+
 ### Deploying the Soroban Contract to Testnet
 
 To deploy or re-deploy the TariffShield contract to Stellar Testnet for staging:
