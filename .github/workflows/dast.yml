@@ -33,7 +33,7 @@ jobs:
           docker compose up -d api
           
           # Wait for API to be ready
-          until curl -s http://localhost:3002/health | grep -q "ok"; do
+          until curl -s http://localhost:3002/health | grep -q '"status":"ok"\|"ok"'; do
             echo "Waiting for API..."
             sleep 2
           done
