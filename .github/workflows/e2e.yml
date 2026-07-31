@@ -7,6 +7,8 @@ jobs:
   e2e:
     name: e2e
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event.deployment_status.state == 'success' && github.event.deployment_status.environment == 'Preview'
     if: github.event.deployment_status.state == 'success' && contains(fromJSON('["Preview", "preview"]'), github.event.deployment_status.environment)
     steps:
       - uses: actions/checkout@v4
