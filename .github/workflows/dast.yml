@@ -6,9 +6,15 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   dast_scan:
     runs-on: ubuntu-latest
+    # Bounds a hung API/ZAP step so it can't ride the 360-minute runner ceiling.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -32,9 +38,17 @@ jobs:
           cp .env apps/api/.env
           docker compose up -d api
           
-          # Wait for API to be ready
-          until curl -s http://localhost:3002/health | grep -q '"status":"ok"\|"ok"'; do
-            echo "Waiting for API..."
+          # Wait for API to be ready (bounded: max 60 attempts, 2s apart = 120s)
+          for i in $(seq 1 60); do
+            if curl -s --connect-timeout 5 --max-time 10 http://localhost:3002/health | grep -q '"status":"ok"\|"ok"'; then
+              echo "API is healthy"
+              break
+            fi
+            if [ "$i" -eq 60 ]; then
+              echo "::error::API did not become healthy within 60 attempts (120s)"
+              exit 1
+            fi
+            echo "Waiting for API... ($i/60)"
             sleep 2
           done
 
