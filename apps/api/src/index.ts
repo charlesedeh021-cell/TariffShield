@@ -27,6 +27,7 @@ import { complianceRouter } from "./routes/compliance.js";
 import { kycRouter } from "./routes/kyc.js";
 import { startComplianceReportScheduler } from "./jobs/compliance-report.js";
 import { startImporterMetricsScheduler } from "./jobs/refresh-importer-metrics.js";
+import { startContractEventsPartitionScheduler } from "./jobs/ensure-contract-events-partitions.js";
 import { suretyLicenseRouter } from "./routes/surety-license.js";
 import { regulatoryRouter } from "./routes/regulatory.js";
 import { healthRouter } from "./routes/health.js";
@@ -341,6 +342,7 @@ async function start() {
   await startOracleEventListener();
   startComplianceReportScheduler();
   startImporterMetricsScheduler();
+  startContractEventsPartitionScheduler();
   app.listen(env.PORT, () => {
     logger.info({ port: env.PORT, contractId: env.TARIFF_SHIELD_CONTRACT_ID, corsAllowlist: Array.from(ALLOWED_ORIGINS) }, "tariffshield API server started");
   });

@@ -8,6 +8,14 @@ env:
   PR_SIZE_WARN: 400
   PR_SIZE_FAIL: 1000
 
+# Runs are serialized (not cancelled) per PR: the job reads existing comments
+# then upserts one matching a marker, so overlapping runs (e.g. a push
+# followed immediately by a label change) can both read state before either
+# writes, producing duplicate size-check comments instead of one update.
+concurrency:
+  group: pr-size-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
 jobs:
   size-check:
     name: size-check
