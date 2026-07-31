@@ -16,6 +16,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: production
     # Deploy hook plus the health poll finish in about a minute. The bound stops
     # an unreachable Render or Slack endpoint from holding the job open until
     # the 6-hour default limit.
