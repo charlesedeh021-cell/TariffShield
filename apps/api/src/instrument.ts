@@ -7,7 +7,7 @@ Sentry.init({
   tracesSampleRate: 0.1,
   profilesSampleRate: 1.0,
   integrations: [
-    nodeProfilingIntegration(),
+    nodeProfilingIntegration() as any,
   ],
   release: process.env.VERCEL_GIT_COMMIT_SHA || process.env.SENTRY_RELEASE,
 });

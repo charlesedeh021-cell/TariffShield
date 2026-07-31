@@ -16,7 +16,7 @@ const sdk = new NodeSDK({
   }),
   traceExporter: new OTLPTraceExporter({
     url: `${exporterEndpoint}/v1/traces`,
-  }),
+  }) as any,
   instrumentations: [
     getNodeAutoInstrumentations({
       "@opentelemetry/instrumentation-http": { enabled: true },
@@ -24,7 +24,7 @@ const sdk = new NodeSDK({
       "@opentelemetry/instrumentation-pg": { enabled: true },
       // Disable fs instrumentation to avoid noisy spans from config reads
       "@opentelemetry/instrumentation-fs": { enabled: false },
-    }),
+    } as any),
   ],
 });
 

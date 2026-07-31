@@ -8,11 +8,14 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "test": "tsx --test src/compatibility.test.ts",
     "lint": "eslint --max-warnings 0 src",
     "lint:fix": "eslint --fix src",
     "format:check": "prettier --check .",
@@ -23,6 +26,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.7.2"
   }
 }

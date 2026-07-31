@@ -871,7 +871,7 @@ export async function rollback(): Promise<void> {
     undefined,
     'migrate_schema'
   );
-  console.log('[migrate] schema ready');
+  logger.info("schema ready");
 }
 
 // ── importer_metrics_mv (#251) ────────────────────────────────────────────────

@@ -220,6 +220,36 @@ npm run format --workspace=packages/sdk
 
 CI enforces `--max-warnings 0` on every pull request via the **Lint** workflow (`.github/workflows/lint.yml`). Any ESLint warning blocks the merge. `// eslint-disable` directives require an explanatory inline note.
 
+## Developer Tooling & Workflow
+
+### Contract Hot Reload
+Contract tests support instant re-execution on file save via `cargo-watch`:
+```bash
+# Install cargo-watch (one-time setup)
+cargo install cargo-watch --version 8.5.2
+
+# Start watching contract source files
+npm run watch:contracts
+# or via Makefile
+make watch-contracts
+```
+The watch process is scoped to `src/` (`-w src/`) to avoid rebuild loops triggered by `target/` output.
+
+### Pre-commit Hooks
+Pre-commit checks are managed with `husky` and `lint-staged`. On `git commit`:
+- `eslint --fix` is run on staged `.ts`/`.tsx` files.
+- `prettier --write` formats staged `.ts`, `.tsx`, `.json`, `.yaml`, and `.md` files.
+- `tsc --noEmit` verifies TypeScript types in `apps/api` and `apps/web`.
+- `commitlint` validates commit messages against Conventional Commits.
+
+To bypass pre-commit hooks in an emergency, use `git commit --no-verify` (use with caution).
+
+### Contract Version Compatibility Checker
+Verify compatibility between SDK version and deployed contract version:
+```bash
+npx tsx scripts/check-contract-version.ts --contract-id <CONTRACT_ID> --sdk-version 0.1.0
+```
+
 ## Changelog
 
 See [CHANGELOG.md](./CHANGELOG.md) for a full history of releases following the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.

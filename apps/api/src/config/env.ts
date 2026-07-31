@@ -97,6 +97,10 @@ export const Env = z.object({
     .default(50)
     .describe('Alert threshold for collateral change'),
   ALERT_CHANNEL: z.string().default('console').describe('Alert channel for oracle monitor'),
+  LOG_LEVEL: z
+    .enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal'])
+    .default('info')
+    .describe('Log level for pino logger'),
 
   // #332 / #334 — price oracle and emergency admin secrets
   PRICE_ORACLE_CONTRACT_ID: z
@@ -165,6 +169,10 @@ export const Env = z.object({
     .describe('Active key version for field encryption; increment on rotation'),
 
   // #312/#319 — S3 document storage
+  S3_DOCUMENTS_BUCKET: z
+    .string()
+    .optional()
+    .describe('S3 bucket name for generic document storage'),
   S3_KYC_BUCKET: z
     .string()
     .optional()

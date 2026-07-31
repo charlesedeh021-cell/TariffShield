@@ -28,3 +28,5 @@ try {
 } finally {
   await pool.end();
 }
+
+export {};
