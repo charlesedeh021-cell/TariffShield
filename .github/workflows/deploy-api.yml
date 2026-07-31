@@ -8,9 +8,18 @@ on:
     types:
       - completed
 
+# Checkout is the only thing that needs the token; the Render deploy hook and
+# the Slack webhook authenticate with their own secrets.
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Deploy hook plus the health poll finish in about a minute. The bound stops
+    # an unreachable Render or Slack endpoint from holding the job open until
+    # the 6-hour default limit.
+    timeout-minutes: 10
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     env:
       SERVICE: API
@@ -45,7 +54,7 @@ jobs:
 
       - name: Notify Slack on success
         if: success()
-        uses: slackapi/[email protected]
+        uses: slackapi/slack-github-action@v1.24.0
         with:
           webhook: ${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}
           webhook-type: incoming-webhook
@@ -54,7 +63,7 @@ jobs:
 
       - name: Notify Slack on failure
         if: failure()
-        uses: slackapi/[email protected]
+        uses: slackapi/slack-github-action@v1.24.0
         with:
           webhook: ${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}
           webhook-type: incoming-webhook
