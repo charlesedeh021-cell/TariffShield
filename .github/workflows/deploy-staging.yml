@@ -11,6 +11,10 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+# The workflow only reads the repository; deploy credentials come from the
+# `staging` environment secrets, not from GITHUB_TOKEN.
+permissions:
+  contents: read
 
 jobs:
   deploy-staging:
@@ -30,7 +34,11 @@ jobs:
           curl -X POST "${{ secrets.STAGING_RENDER_DEPLOY_HOOK_URL }}"
 
       - name: Deploy Web to Vercel Staging
-        uses: amondnet/vercel-action@v25
+        # Pinned to the commit behind tag v25.2.0. Third-party actions are
+        # pinned by full SHA so a retagged release cannot silently change what
+        # runs with the Vercel deploy token. See docs/deployment.md ("Pinned
+        # third-party GitHub Actions") before bumping.
+        uses: amondnet/vercel-action@16e87c0a08142b0d0d33b76aeaf20823c381b9b9 # v25.2.0
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}

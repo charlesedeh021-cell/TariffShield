@@ -9,11 +9,16 @@ env:
   # Fails the build if the release .wasm exceeds this size. Override per-run
   # via workflow_dispatch inputs or by editing this value.
   MAX_WASM_BYTES: 102400
+  # Job timeout (minutes) — keeps a hung cargo compile or registry stall from
+  # consuming the full default runner allowance (see timeout-minutes below).
+  JOB_TIMEOUT_MINUTES: 20
 
 jobs:
   test-and-size-budget:
     name: cargo test + wasm size budget
     runs-on: ubuntu-latest
+    # Fail fast on a hung cargo step; matches JOB_TIMEOUT_MINUTES in env above
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 

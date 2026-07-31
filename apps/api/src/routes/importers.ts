@@ -157,10 +157,12 @@ importersRouter.post('/', async (req: Request, res: Response) => {
     onChain.txHash,
     importer.id,
   ]);
+  // #228: bare ON CONFLICT DO NOTHING — required now that contract_events is
+  // partitioned; see lib/contract-events-partitions.ts.
   await pool.query(
     `INSERT INTO contract_events (importer_id, kind, tx_hash, ledger_sequence, event_index)
      VALUES ($1, $2, $3, $4, $5)
-     ON CONFLICT (ledger_sequence, event_index) DO NOTHING`,
+     ON CONFLICT DO NOTHING`,
     [importer.id, 'register', onChain.txHash, onChain.ledgerSequence, onChain.applicationOrder]
   );
 
@@ -413,6 +415,7 @@ importersRouter.get("/:id", async (req: Request, res: Response) => {
       bondId: importer.bond_id,
       stellarAddress: importer.stellar_address,
       registeredOnChainTx: importer.registered_on_chain_tx,
+      kycStatus: importer.kyc_status,
       createdAt: importer.created_at,
     },
     onChainAccount,
@@ -560,6 +563,16 @@ importersRouter.post('/:id/upload-tariff-csv', async (req: Request, res: Respons
     res.status(404).json({ error: 'not found' });
     return;
   }
+
+  // #229: block tariff-driven collateral requirement changes until KYC is approved.
+  if (importer.kyc_status !== 'approved') {
+    res.status(403).json({
+      error: 'KYC approval required before tariff uploads',
+      kycStatus: importer.kyc_status,
+    });
+    return;
+  }
+
   const parse = TariffUploadSchema.safeParse(req.body);
   if (!parse.success) {
     res.status(400).json({ error: 'invalid input', details: parse.error.issues });
@@ -676,10 +689,12 @@ importersRouter.post('/:id/upload-tariff-csv', async (req: Request, res: Respons
       console.error('[importers] tariff alert evaluation failed:', err);
     }
 
+    // #228: bare ON CONFLICT DO NOTHING — required now that contract_events is
+    // partitioned; see lib/contract-events-partitions.ts.
     await pool.query(
       `INSERT INTO contract_events (importer_id, kind, amount, tx_hash, ledger_sequence, event_index)
        VALUES ($1, 'required_changed', $2, $3, $4, $5)
-       ON CONFLICT (ledger_sequence, event_index) DO NOTHING`,
+       ON CONFLICT DO NOTHING`,
       [
         importer.id,
         requiredStroops.toString(),
@@ -790,6 +805,16 @@ importersRouter.post('/:id/auto-top-up', async (req: Request, res: Response) => 
     res.status(404).json({ error: 'not found' });
     return;
   }
+
+  // #229: block auto-top-up until KYC is approved (same rule as manual deposits).
+  if (importer.kyc_status !== 'approved') {
+    res.status(403).json({
+      error: 'KYC approval required before auto-top-up',
+      kycStatus: importer.kyc_status,
+    });
+    return;
+  }
+
   const jobId = await enqueueTxSubmit({
     method: 'auto_top_up',
     importerId: importer.id,
@@ -812,6 +837,16 @@ importersRouter.post('/:id/withdraw', async (req: Request, res: Response) => {
     res.status(404).json({ error: 'not found' });
     return;
   }
+
+  // #229: block withdrawals until KYC is approved (same rule as deposits/auto-top-up).
+  if (importer.kyc_status !== 'approved') {
+    res.status(403).json({
+      error: 'KYC approval required before withdrawals',
+      kycStatus: importer.kyc_status,
+    });
+    return;
+  }
+
   const parse = WithdrawSchema.safeParse(req.body);
   if (!parse.success) {
     res.status(400).json({ error: 'invalid input' });
