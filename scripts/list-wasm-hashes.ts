@@ -7,89 +7,88 @@
  *
  * Usage:
  *   tsx scripts/list-wasm-hashes.ts
+ *
+ * The filtering/fallback/sort/selection logic lives in
+ * scripts/lib/list-wasm-hashes-logic.ts as pure, exported functions
+ * (loadHistory, filterDeployments, sortByDeployedAtDescending,
+ * selectPreviousDeployment) so it can be unit tested — see
+ * scripts/__tests__/list-wasm-hashes.test.ts — against in-memory fixtures
+ * instead of a real deployments/history.json file. This file is a thin I/O
+ * wrapper: read the file, call the pure functions, print.
  */
 
-import * as fs from "node:fs";
 import * as path from "node:path";
+import {
+  DeploymentHistoryNotFoundError,
+  EmptyDeploymentHistoryError,
+  filterDeployments,
+  loadHistory,
+  selectPreviousDeployment,
+  sortByDeployedAtDescending,
+} from "./lib/list-wasm-hashes-logic.js";
 
-interface DeploymentRecord {
-  network: string;
-  contractId: string;
-  wasmHash: string;
-  version?: string;
-  deployedAt: string;
-  deployedBy?: string;
-}
-
-async function main() {
+export async function main() {
   const historyPath = path.join(process.cwd(), "deployments", "history.json");
 
-  if (!fs.existsSync(historyPath)) {
-    console.error("ERROR: deployments/history.json not found");
-    console.error(
-      "\nThis file is created automatically by deployment scripts.",
-    );
-    console.error(
-      "If you need to rollback and this file doesn't exist, you must",
-    );
-    console.error(
-      "manually query the Stellar network for previous wasm hashes.",
-    );
-    process.exit(1);
-  }
-
-  const historyContent = fs.readFileSync(historyPath, "utf-8");
-  const history: DeploymentRecord[] = JSON.parse(historyContent);
-
-  if (history.length === 0) {
-    console.error("ERROR: No deployment history found");
-    process.exit(1);
+  let history;
+  try {
+    history = loadHistory(historyPath);
+  } catch (error) {
+    if (error instanceof DeploymentHistoryNotFoundError) {
+      console.error("ERROR: deployments/history.json not found");
+      console.error(
+        "\nThis file is created automatically by deployment scripts.",
+      );
+      console.error(
+        "If you need to rollback and this file doesn't exist, you must",
+      );
+      console.error(
+        "manually query the Stellar network for previous wasm hashes.",
+      );
+      process.exit(1);
+    }
+    if (error instanceof EmptyDeploymentHistoryError) {
+      console.error("ERROR: No deployment history found");
+      process.exit(1);
+    }
+    throw error;
   }
 
   const contractId = process.env.TARIFF_SHIELD_CONTRACT_ID;
   const network = process.env.STELLAR_NETWORK || "testnet";
 
-  // Filter by current contract and network if available
-  let relevantDeployments = history;
-  if (contractId) {
-    relevantDeployments = history.filter((d) => d.contractId === contractId);
-  }
-  if (network) {
-    relevantDeployments = relevantDeployments.filter(
-      (d) => d.network === network,
-    );
-  }
+  const relevantDeployments = filterDeployments(history, { contractId, network });
+  // filterDeployments returns the same `history` array reference only when it
+  // fell back after a zero-match filter (or when no filters were requested at
+  // all, in which case there's nothing to report as a fallback).
+  const usedFallback = relevantDeployments === history && Boolean(contractId || network);
 
-  if (relevantDeployments.length === 0) {
+  if (usedFallback) {
     console.log("No deployments found for current contract/network");
     console.log("\nShowing all deployments:");
-    relevantDeployments = history;
   }
 
   console.log("=== TariffShield Contract Deployment History ===\n");
   console.log(`Total deployments: ${relevantDeployments.length}\n`);
 
-  relevantDeployments
-    .sort(
-      (a, b) =>
-        new Date(b.deployedAt).getTime() - new Date(a.deployedAt).getTime(),
-    )
-    .forEach((deployment, index) => {
-      const isCurrent = index === 0;
-      const marker = isCurrent ? " (CURRENT)" : "";
+  const sorted = sortByDeployedAtDescending(relevantDeployments);
 
-      console.log(`${index + 1}. ${marker}`);
-      console.log(`   WASM Hash: ${deployment.wasmHash}`);
-      console.log(`   Contract:  ${deployment.contractId}`);
-      console.log(`   Network:   ${deployment.network}`);
-      console.log(`   Version:   ${deployment.version || "unknown"}`);
-      console.log(`   Deployed:  ${deployment.deployedAt}`);
-      console.log(`   By:        ${deployment.deployedBy || "unknown"}`);
-      console.log("");
-    });
+  sorted.forEach((deployment, index) => {
+    const isCurrent = index === 0;
+    const marker = isCurrent ? " (CURRENT)" : "";
 
-  if (relevantDeployments.length >= 2) {
-    const previousDeployment = relevantDeployments[1];
+    console.log(`${index + 1}. ${marker}`);
+    console.log(`   WASM Hash: ${deployment.wasmHash}`);
+    console.log(`   Contract:  ${deployment.contractId}`);
+    console.log(`   Network:   ${deployment.network}`);
+    console.log(`   Version:   ${deployment.version || "unknown"}`);
+    console.log(`   Deployed:  ${deployment.deployedAt}`);
+    console.log(`   By:        ${deployment.deployedBy || "unknown"}`);
+    console.log("");
+  });
+
+  const previousDeployment = selectPreviousDeployment(sorted);
+  if (previousDeployment) {
     console.log("=== Quick Rollback Command ===");
     console.log(
       `tsx scripts/rollback-upgrade.ts --previous-wasm-hash ${previousDeployment.wasmHash} --contract-id ${previousDeployment.contractId}`,
@@ -97,7 +96,12 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error("Fatal error:", error);
-  process.exit(1);
-});
+// Only run when invoked directly (tsx scripts/list-wasm-hashes.ts), not when
+// imported for its exported functions — e.g. by
+// scripts/__tests__/list-wasm-hashes.test.ts.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((error) => {
+    console.error("Fatal error:", error);
+    process.exit(1);
+  });
+}
