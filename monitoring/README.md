@@ -114,6 +114,25 @@ The API metrics dashboard configuration is stored in [tariffshield-api.json]. It
    ```
 3. Grafana will automatically resolve the templating datasource variable `DS_PROMETHEUS` at startup to your active Prometheus datasource.
 
+## Alert Label Convention
+
+All Prometheus alert rules must include a `team` label so Alertmanager can route
+alerts to the correct on-call receiver. Without it, alerts fall through to the
+default route instead of paging the responsible team.
+
+**Convention:** every alert in `monitoring/prometheus/alerts/*.yml` must carry
+`team: backend` unless a more specific team label is appropriate.
+
+```yaml
+labels:
+  severity: critical
+  team: backend   # required on every alert rule
+```
+
+This matches the convention established in `database.yml` and is now applied to
+`indexer.yml` and `reconciliation.yml` as well. When adding a new alert file, ensure
+its rules include this label before merging.
+
 ---
 
 ## OpenTelemetry Distributed Tracing (issue #368)
