@@ -6,6 +6,10 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   # Fails the build if the release .wasm exceeds this size. Override per-run
   # via workflow_dispatch inputs or by editing this value.
