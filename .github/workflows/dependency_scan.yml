@@ -30,4 +30,11 @@ jobs:
       - name: Cargo Audit
         run: |
           cargo install cargo-audit
-          cd contracts/tariff-shield && cargo audit -D warnings
+          # Run from the workspace root, where Cargo.lock lives (contracts/tariff-shield
+          # is a workspace member, not its own root) — cargo-audit does not walk up to
+          # find it like `cargo build`/`cargo test` do.
+          # RUSTSEC-2024-0388 (derivative) and RUSTSEC-2024-0436 (paste) are unmaintained
+          # advisories transitively pulled in by soroban-env-host's ark-* crypto stack
+          # with "No safe upgrade available" upstream; see deny.toml for the same
+          # documented exception.
+          cargo audit -D warnings --ignore RUSTSEC-2024-0388 --ignore RUSTSEC-2024-0436

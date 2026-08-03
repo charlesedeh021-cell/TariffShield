@@ -5,25 +5,34 @@
 targets = []
 
 [advisories]
+version = 2
 db-urls = ["https://github.com/RustSec/advisory-db"]
-# Fail on any security advisories (note: we use cargo-audit for primary vulnerability scanning)
-vulnerability = "deny"
+# Transitively pulled in by soroban-env-host's ark-* (BLS12-381) crypto stack;
+# both advisories note "No safe upgrade is available" upstream.
+ignore = [
+    "RUSTSEC-2024-0388", # derivative is unmaintained (via ark-ec/ark-ff/ark-poly)
+    "RUSTSEC-2024-0436", # paste is unmaintained (via ark-ff/wasmi_core)
+]
 
 [licenses]
-# Treat unlicensed packages as failures
-unlicensed = "deny"
+version = 2
 # The list of allowed licenses for all dependencies (direct and transitive)
 allow = [
     "MIT",
     "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
     "ISC",
+    "BSD-3-Clause",
+    "Unicode-3.0",
 ]
 # Confidence threshold for license detection (0.8 is standard and reliable)
 confidence-threshold = 0.8
 
 [bans]
-# Block duplicate crate versions in the dependency tree to prevent bloated binaries and version conflicts
-multiple-versions = "deny"
-# Allow list/skip list for specific duplicates can be added below if necessary
+# soroban-sdk pulls in independent crates (ark-*, wasmparser, serde_with, syn
+# macro deps) that each pin their own transitive versions of darling/hashbrown/
+# syn; those splits are upstream and outside our control, so this is a warning
+# rather than a hard failure.
+multiple-versions = "warn"
 skip = []
 skip-tree = []
