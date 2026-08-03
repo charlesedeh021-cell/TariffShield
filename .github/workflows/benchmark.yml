@@ -77,6 +77,10 @@ jobs:
 
       - name: Start API in background
         run: |
+          # apps/api imports @tariffshield/sdk via its built dist/index.d.ts
+          # (see packages/sdk/package.json "types"), so it has to be built
+          # before apps/api's own build.
+          npm run build --workspace=packages/sdk
           npm run build --workspace=apps/api
           nohup npm run start --workspace=apps/api > api.log 2>&1 &
           echo "waiting for API to become healthy..."
