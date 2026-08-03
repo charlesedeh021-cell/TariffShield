@@ -1,5 +1,5 @@
-import { pool } from "../db.js";
-import { env } from "../config/env.js";
+import { pool } from '../db.js';
+import { env } from '../config/env.js';
 
 // Monthly compliance report generation job (#319).
 // Scheduled to run on the first business day of each month.
@@ -52,83 +52,83 @@ async function buildReportData(monthStart: Date, monthEnd: Date): Promise<Report
     pool.query<{ cnt: string }>(
       `SELECT COUNT(*) AS cnt FROM bond_records
        WHERE created_at <= $2 AND (expiry_date IS NULL OR expiry_date > $1)`,
-      [monthStart, monthEnd],
+      [monthStart, monthEnd]
     ),
     pool.query<{ cnt: string }>(
       `SELECT COUNT(*) AS cnt FROM bond_records WHERE created_at BETWEEN $1 AND $2`,
-      [monthStart, monthEnd],
+      [monthStart, monthEnd]
     ),
     pool.query<{ cnt: string }>(
       `SELECT COUNT(*) AS cnt FROM bond_records
        WHERE expiry_date IS NOT NULL AND expiry_date BETWEEN $1 AND $2`,
-      [monthStart, monthEnd],
+      [monthStart, monthEnd]
     ),
     pool.query<{ total: string }>(
       `SELECT COALESCE(SUM(bond_amount), 0) AS total FROM bond_records
        WHERE created_at <= $2 AND (expiry_date IS NULL OR expiry_date > $1)`,
-      [monthStart, monthEnd],
+      [monthStart, monthEnd]
     ),
     pool.query<{ cnt: string }>(
       `SELECT COUNT(*) AS cnt FROM kyc_documents WHERE reviewed_at BETWEEN $1 AND $2`,
-      [monthStart, monthEnd],
+      [monthStart, monthEnd]
     ),
     pool.query<{ cnt: string }>(
       `SELECT COUNT(*) AS cnt FROM kyc_documents
        WHERE review_status = 'approved' AND reviewed_at BETWEEN $1 AND $2`,
-      [monthStart, monthEnd],
+      [monthStart, monthEnd]
     ),
     pool.query<{ cnt: string }>(
       `SELECT COUNT(*) AS cnt FROM kyc_documents
        WHERE review_status = 'rejected' AND reviewed_at BETWEEN $1 AND $2`,
-      [monthStart, monthEnd],
+      [monthStart, monthEnd]
     ),
     pool.query<{ cnt: string }>(
-      `SELECT COUNT(*) AS cnt FROM importers WHERE kyc_status = 'pending'`,
+      `SELECT COUNT(*) AS cnt FROM importers WHERE kyc_status = 'pending'`
     ),
     pool.query<{ cnt: string }>(
       `SELECT COUNT(*) AS cnt FROM aml_screenings WHERE screening_timestamp BETWEEN $1 AND $2`,
-      [monthStart, monthEnd],
+      [monthStart, monthEnd]
     ),
     pool.query<{ cnt: string }>(
       `SELECT COUNT(*) AS cnt FROM compliance_flags WHERE created_at BETWEEN $1 AND $2`,
-      [monthStart, monthEnd],
+      [monthStart, monthEnd]
     ),
     pool.query<{ cnt: string }>(
       `SELECT COUNT(*) AS cnt FROM compliance_flags
        WHERE resolution_status = 'resolved' AND resolved_at BETWEEN $1 AND $2`,
-      [monthStart, monthEnd],
+      [monthStart, monthEnd]
     ),
     pool.query<{ cnt: string }>(
-      `SELECT COUNT(*) AS cnt FROM bond_records WHERE bond_amount < cbp_minimum_required`,
+      `SELECT COUNT(*) AS cnt FROM bond_records WHERE bond_amount < cbp_minimum_required`
     ),
     pool.query<{ cnt: string }>(
-      `SELECT COUNT(*) AS cnt FROM bond_records WHERE surety_fein = 'TBD'`,
+      `SELECT COUNT(*) AS cnt FROM bond_records WHERE surety_fein = 'TBD'`
     ),
   ]);
 
   return {
     month,
     bondPortfolio: {
-      totalActive: parseInt(activeBonds.rows[0]?.cnt ?? "0", 10),
-      newIssued: parseInt(newBonds.rows[0]?.cnt ?? "0", 10),
-      expiredOrCancelled: parseInt(expiredBonds.rows[0]?.cnt ?? "0", 10),
-      aggregateFaceValue: faceValue.rows[0]?.total ?? "0",
+      totalActive: parseInt(activeBonds.rows[0]?.cnt ?? '0', 10),
+      newIssued: parseInt(newBonds.rows[0]?.cnt ?? '0', 10),
+      expiredOrCancelled: parseInt(expiredBonds.rows[0]?.cnt ?? '0', 10),
+      aggregateFaceValue: faceValue.rows[0]?.total ?? '0',
     },
     kycActivity: {
-      reviewsCompleted: parseInt(kycCompleted.rows[0]?.cnt ?? "0", 10),
-      approvals: parseInt(kycApproved.rows[0]?.cnt ?? "0", 10),
-      rejections: parseInt(kycRejected.rows[0]?.cnt ?? "0", 10),
-      pendingQueue: parseInt(kycPending.rows[0]?.cnt ?? "0", 10),
+      reviewsCompleted: parseInt(kycCompleted.rows[0]?.cnt ?? '0', 10),
+      approvals: parseInt(kycApproved.rows[0]?.cnt ?? '0', 10),
+      rejections: parseInt(kycRejected.rows[0]?.cnt ?? '0', 10),
+      pendingQueue: parseInt(kycPending.rows[0]?.cnt ?? '0', 10),
     },
     amlScreening: {
-      screened: parseInt(amlScreened.rows[0]?.cnt ?? "0", 10),
-      flagsRaised: parseInt(flagsRaised.rows[0]?.cnt ?? "0", 10),
-      flagsResolved: parseInt(flagsResolved.rows[0]?.cnt ?? "0", 10),
+      screened: parseInt(amlScreened.rows[0]?.cnt ?? '0', 10),
+      flagsRaised: parseInt(flagsRaised.rows[0]?.cnt ?? '0', 10),
+      flagsResolved: parseInt(flagsResolved.rows[0]?.cnt ?? '0', 10),
       sarEligibleEvents: 0, // populated by AML provider integration
     },
     regulatoryActions: {
-      bondsBelowCbpMinimum: parseInt(bondsBelowMin.rows[0]?.cnt ?? "0", 10),
-      bondsAwaitingSignature: parseInt(bondsUnsigned.rows[0]?.cnt ?? "0", 10),
+      bondsBelowCbpMinimum: parseInt(bondsBelowMin.rows[0]?.cnt ?? '0', 10),
+      bondsAwaitingSignature: parseInt(bondsUnsigned.rows[0]?.cnt ?? '0', 10),
     },
   };
 }
@@ -136,7 +136,7 @@ async function buildReportData(monthStart: Date, monthEnd: Date): Promise<Report
 // Stub: in production, render HTML via Puppeteer/PDFKit and upload to S3_REPORTS_BUCKET.
 async function generateAndUploadPdf(
   reportData: ReportData,
-  suretyId: string,
+  suretyId: string
 ): Promise<string | null> {
   if (!env.S3_REPORTS_BUCKET) return null;
   const key = `reports/${suretyId}/${reportData.month}.pdf`;
@@ -153,16 +153,14 @@ async function notifySuretyAdmins(suretyId: string, reportMonth: string): Promis
   // Production: fetch surety_admin emails, send via SendGrid
 }
 
-export async function generateMonthlyComplianceReport(
-  targetMonth?: Date,
-): Promise<void> {
+export async function generateMonthlyComplianceReport(targetMonth?: Date): Promise<void> {
   const now = targetMonth ?? new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const monthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
   const reportMonthDate = monthStart.toISOString().slice(0, 10);
 
   const suretyAdmins = await pool.query<{ id: string }>(
-    `SELECT id FROM users WHERE role = 'surety_admin'`,
+    `SELECT id FROM users WHERE role = 'surety_admin'`
   );
 
   for (const admin of suretyAdmins.rows) {
@@ -176,13 +174,13 @@ export async function generateMonthlyComplianceReport(
       await pool.query(
         `UPDATE compliance_reports SET superseded_at = now()
          WHERE surety_id = $1 AND report_month = $2 AND superseded_at IS NULL`,
-        [suretyId, reportMonthDate],
+        [suretyId, reportMonthDate]
       );
 
       await pool.query(
         `INSERT INTO compliance_reports (surety_id, report_month, report_data, pdf_s3_key)
          VALUES ($1, $2, $3, $4)`,
-        [suretyId, reportMonthDate, JSON.stringify(reportData), pdfKey],
+        [suretyId, reportMonthDate, JSON.stringify(reportData), pdfKey]
       );
 
       await notifySuretyAdmins(suretyId, reportMonthDate);
@@ -211,16 +209,16 @@ export function startComplianceReportScheduler(): void {
   async function tick() {
     const now = new Date();
     if (now.getUTCHours() === 6 && isFirstBusinessDayOfMonth(now)) {
-      console.log("[compliance-report] triggering monthly report generation");
+      console.log('[compliance-report] triggering monthly report generation');
       await generateMonthlyComplianceReport(now).catch((err) =>
-        console.error("[compliance-report] scheduler error:", err),
+        console.error('[compliance-report] scheduler error:', err)
       );
     }
   }
 
   setInterval(() => {
-    tick().catch((err) => console.error("[compliance-report] tick error:", err));
+    tick().catch((err) => console.error('[compliance-report] tick error:', err));
   }, CHECK_INTERVAL_MS);
 
-  console.log("[compliance-report] scheduler started");
+  console.log('[compliance-report] scheduler started');
 }

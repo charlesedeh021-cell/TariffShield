@@ -1,92 +1,94 @@
-import { Router } from "express";
-import { ping, getPoolStats } from "../db.js";
-import { pingRpc } from "../stellar.js";
-import { pingRedis } from "../queue.js";
-import { env, isProduction } from "../config/env.js";
-import { readFileSync } from "fs";
-import { join } from "path";
+import { Router } from 'express';
+import { ping, getPoolStats } from '../db.js';
+import { pingRpc } from '../stellar.js';
+import { pingRedis } from '../queue.js';
+import { env, isProduction } from '../config/env.js';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
 export const healthRouter = Router();
 
-let version = "unknown";
+let version = 'unknown';
 try {
-  const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8"));
-  version = pkg.version || "unknown";
-} catch (e) {}
+  const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'));
+  version = pkg.version || 'unknown';
+} catch (e) {
+  /* intentionally ignored — fall back to the "unknown" version already set above */
+}
 
-healthRouter.get("/", async (_req, res) => {
+healthRouter.get('/', async (_req, res) => {
   const checks = {
-    db: "connected",
-    soroban: "ok",
-    redis: "connected",
+    db: 'connected',
+    soroban: 'ok',
+    redis: 'connected',
   };
   let hasError = false;
 
   try {
     await ping();
   } catch (err) {
-    checks.db = "failed";
+    checks.db = 'failed';
     hasError = true;
   }
 
   try {
     await pingRpc();
   } catch (err) {
-    checks.soroban = "failed";
+    checks.soroban = 'failed';
     hasError = true;
   }
 
   try {
     await pingRedis();
   } catch (err) {
-    checks.redis = "failed";
+    checks.redis = 'failed';
     hasError = true;
   }
 
   if (hasError) {
     res.status(503).json({
-      status: "degraded",
+      status: 'degraded',
       version,
       ...checks,
     });
   } else {
     res.json({
-      status: "ok",
+      status: 'ok',
       version,
       ...checks,
       contractId: env.TARIFF_SHIELD_CONTRACT_ID,
       network: env.STELLAR_NETWORK,
-      env: isProduction ? "production" : "development",
+      env: isProduction ? 'production' : 'development',
     });
   }
 });
 
 // #241 — dedicated DB health check with pool stats, for monitoring
 // connection saturation independently of the aggregate /health checks above.
-healthRouter.get("/db", async (_req, res) => {
+healthRouter.get('/db', async (_req, res) => {
   try {
     await ping();
     res.json({
-      status: "ok",
+      status: 'ok',
       pool: getPoolStats(),
     });
   } catch (err) {
     res.status(503).json({
-      status: "failed",
+      status: 'failed',
       pool: getPoolStats(),
     });
   }
 });
 
-healthRouter.get("/live", (_req, res) => {
-  res.status(200).send("OK");
+healthRouter.get('/live', (_req, res) => {
+  res.status(200).send('OK');
 });
 
-healthRouter.get("/ready", async (_req, res) => {
+healthRouter.get('/ready', async (_req, res) => {
   try {
     await Promise.all([ping(), pingRpc(), pingRedis()]);
-    res.status(200).send("OK");
+    res.status(200).send('OK');
   } catch (err) {
-    res.status(503).send("Service Unavailable");
+    res.status(503).send('Service Unavailable');
   }
 });

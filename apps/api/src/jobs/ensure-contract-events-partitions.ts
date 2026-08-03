@@ -13,17 +13,17 @@
 // catches any row whose created_at doesn't match a declared range, so this
 // job falling behind delays partition pruning for that month rather than
 // causing insert errors.
-import client from "prom-client";
-import { pino } from "pino";
-import { pool } from "../db.js";
-import { monthRange, createContractEventsPartition } from "../lib/contract-events-partitions.js";
+import client from 'prom-client';
+import { pino } from 'pino';
+import { pool } from '../db.js';
+import { monthRange, createContractEventsPartition } from '../lib/contract-events-partitions.js';
 
-const logger = pino({ name: "contract-events-partition-scheduler" });
+const logger = pino({ name: 'contract-events-partition-scheduler' });
 
 const partitionEnsureRunsCounter = new client.Counter({
-  name: "contract_events_partition_ensure_runs_total",
-  help: "Total number of contract_events partition-ensure attempts",
-  labelNames: ["outcome"],
+  name: 'contract_events_partition_ensure_runs_total',
+  help: 'Total number of contract_events partition-ensure attempts',
+  labelNames: ['outcome'],
 });
 
 // A monthly partition boundary doesn't need finer than daily checking; the
@@ -43,27 +43,27 @@ async function ensureUpcomingPartitions(): Promise<void> {
       const range = monthRange(target.getUTCFullYear(), target.getUTCMonth() + 1);
       await createContractEventsPartition(pool, range);
     }
-    partitionEnsureRunsCounter.inc({ outcome: "success" });
+    partitionEnsureRunsCounter.inc({ outcome: 'success' });
   } catch (err) {
-    partitionEnsureRunsCounter.inc({ outcome: "failure" });
-    logger.error({ err }, "failed to ensure upcoming contract_events partitions");
+    partitionEnsureRunsCounter.inc({ outcome: 'failure' });
+    logger.error({ err }, 'failed to ensure upcoming contract_events partitions');
   }
 }
 
 export function startContractEventsPartitionScheduler(): void {
   setInterval(() => {
     ensureUpcomingPartitions().catch((err) =>
-      logger.error({ err }, "contract_events partition-ensure tick error"),
+      logger.error({ err }, 'contract_events partition-ensure tick error')
     );
   }, CHECK_INTERVAL_MS);
 
   // Prime immediately at boot rather than waiting a full day for the first check.
   ensureUpcomingPartitions().catch((err) =>
-    logger.error({ err }, "initial contract_events partition-ensure failed"),
+    logger.error({ err }, 'initial contract_events partition-ensure failed')
   );
 
   logger.info(
     { intervalMs: CHECK_INTERVAL_MS, monthsAhead: MONTHS_AHEAD },
-    "contract_events partition scheduler started",
+    'contract_events partition scheduler started'
   );
 }

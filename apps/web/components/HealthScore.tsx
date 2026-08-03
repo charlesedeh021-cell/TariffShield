@@ -1,27 +1,35 @@
-export function HealthScore({ collateral, required, reserve }: { collateral: bigint; required: bigint; reserve: bigint }) {
+export function HealthScore({
+  collateral,
+  required,
+  reserve,
+}: {
+  collateral: bigint;
+  required: bigint;
+  reserve: bigint;
+}) {
   const coverageRatio = required === 0n ? 100 : Number((collateral * 100n) / required);
   const reserveRatio = collateral === 0n ? 0 : Number((reserve * 100n) / collateral);
 
   const coverageScore = Math.min(100, coverageRatio);
   const reserveScore = Math.min(100, Math.max(0, reserveRatio));
 
-  const healthScore = Math.round((coverageScore * 0.7 + reserveScore * 0.3));
+  const healthScore = Math.round(coverageScore * 0.7 + reserveScore * 0.3);
 
-  let grade: "excellent" | "good" | "fair" | "poor";
+  let grade: 'excellent' | 'good' | 'fair' | 'poor';
   let gradeColor: string;
 
   if (healthScore >= 80) {
-    grade = "excellent";
-    gradeColor = "text-success bg-success/10";
+    grade = 'excellent';
+    gradeColor = 'text-success bg-success/10';
   } else if (healthScore >= 60) {
-    grade = "good";
-    gradeColor = "text-accent bg-accent/10";
+    grade = 'good';
+    gradeColor = 'text-accent bg-accent/10';
   } else if (healthScore >= 40) {
-    grade = "fair";
-    gradeColor = "text-yellow-500 bg-yellow-500/10";
+    grade = 'fair';
+    gradeColor = 'text-yellow-500 bg-yellow-500/10';
   } else {
-    grade = "poor";
-    gradeColor = "text-danger bg-danger/10";
+    grade = 'poor';
+    gradeColor = 'text-danger bg-danger/10';
   }
 
   return (
@@ -42,10 +50,13 @@ export function HealthScore({ collateral, required, reserve }: { collateral: big
       <div className="mt-3 h-2 bg-border rounded overflow-hidden">
         <div
           className={`h-full transition-all ${
-            healthScore >= 80 ? "bg-success" :
-            healthScore >= 60 ? "bg-accent" :
-            healthScore >= 40 ? "bg-yellow-500" :
-            "bg-danger"
+            healthScore >= 80
+              ? 'bg-success'
+              : healthScore >= 60
+                ? 'bg-accent'
+                : healthScore >= 40
+                  ? 'bg-yellow-500'
+                  : 'bg-danger'
           }`}
           style={{ width: `${healthScore}%` }}
         />

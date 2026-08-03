@@ -1,7 +1,12 @@
-import { Router, type Request, type Response } from "express";
-import { z } from "zod";
-import { pool } from "../db.js";
-import { authMiddleware, privacyReacceptanceGate, tosReacceptanceGate, type AuthedRequest } from "../auth.js";
+import { Router, type Request, type Response } from 'express';
+import { z } from 'zod';
+import { pool } from '../db.js';
+import {
+  authMiddleware,
+  privacyReacceptanceGate,
+  tosReacceptanceGate,
+  type AuthedRequest,
+} from '../auth.js';
 
 export const notificationsRouter = Router();
 notificationsRouter.use(authMiddleware);
@@ -16,8 +21,8 @@ notificationsRouter.use(tosReacceptanceGate);
 // (see implementation.md).
 function decodeNotificationsCursor(raw: string): { createdAt: string; id: string } | null {
   try {
-    const decoded = Buffer.from(raw, "base64").toString("utf8");
-    const sep = decoded.lastIndexOf("|");
+    const decoded = Buffer.from(raw, 'base64').toString('utf8');
+    const sep = decoded.lastIndexOf('|');
     if (sep === -1) return null;
     return { createdAt: decoded.slice(0, sep), id: decoded.slice(sep + 1) };
   } catch {
@@ -26,7 +31,7 @@ function decodeNotificationsCursor(raw: string): { createdAt: string; id: string
 }
 
 function encodeNotificationsCursor(createdAt: Date, id: string): string {
-  return Buffer.from(`${createdAt.toISOString()}|${id}`, "utf8").toString("base64");
+  return Buffer.from(`${createdAt.toISOString()}|${id}`, 'utf8').toString('base64');
 }
 
 const NotificationsQuerySchema = z.object({
@@ -35,12 +40,12 @@ const NotificationsQuerySchema = z.object({
 });
 
 // GET /notifications — paginated, for the authenticated user, most recent first.
-notificationsRouter.get("/", async (req: Request, res: Response) => {
+notificationsRouter.get('/', async (req: Request, res: Response) => {
   const user = (req as AuthedRequest).user;
 
   const parse = NotificationsQuerySchema.safeParse(req.query);
   if (!parse.success) {
-    res.status(400).json({ error: "invalid query", details: parse.error.issues });
+    res.status(400).json({ error: 'invalid query', details: parse.error.issues });
     return;
   }
   const { limit } = parse.data;
@@ -49,7 +54,7 @@ notificationsRouter.get("/", async (req: Request, res: Response) => {
   if (parse.data.cursor) {
     cursor = decodeNotificationsCursor(parse.data.cursor);
     if (!cursor) {
-      res.status(400).json({ error: "invalid cursor" });
+      res.status(400).json({ error: 'invalid cursor' });
       return;
     }
   }
@@ -65,13 +70,13 @@ notificationsRouter.get("/", async (req: Request, res: Response) => {
         `SELECT id, kind, message, read_at, created_at FROM notifications
          WHERE user_id = $1 AND (created_at, id) < ($2::timestamptz, $3::uuid)
          ORDER BY created_at DESC, id DESC LIMIT $4`,
-        [user.id, cursor.createdAt, cursor.id, limit],
+        [user.id, cursor.createdAt, cursor.id, limit]
       )
     : await pool.query(
         `SELECT id, kind, message, read_at, created_at FROM notifications
          WHERE user_id = $1
          ORDER BY created_at DESC, id DESC LIMIT $2`,
-        [user.id, limit],
+        [user.id, limit]
       );
 
   const notifications = rows.rows.map((n) => ({
@@ -90,38 +95,38 @@ notificationsRouter.get("/", async (req: Request, res: Response) => {
 });
 
 // GET /notifications/unread-count — count of this user's unread notifications.
-notificationsRouter.get("/unread-count", async (req: Request, res: Response) => {
+notificationsRouter.get('/unread-count', async (req: Request, res: Response) => {
   const user = (req as AuthedRequest).user;
 
   const r = await pool.query(
-    "SELECT count(*) FROM notifications WHERE user_id = $1 AND read_at IS NULL",
-    [user.id],
+    'SELECT count(*) FROM notifications WHERE user_id = $1 AND read_at IS NULL',
+    [user.id]
   );
 
   res.json({ unreadCount: Number(r.rows[0]!.count) });
 });
 
 // PATCH /notifications/:id/read — mark one notification read (owner or surety_admin).
-notificationsRouter.patch("/:id/read", async (req: Request, res: Response) => {
+notificationsRouter.patch('/:id/read', async (req: Request, res: Response) => {
   const user = (req as AuthedRequest).user;
-  const notificationId = String(req.params.id ?? "");
+  const notificationId = String(req.params.id ?? '');
 
   // read_at is only ever set once, on first read (COALESCE), so a repeat
   // PATCH is a safe no-op that preserves the original read timestamp rather
   // than resetting it.
   const r =
-    user.role === "surety_admin"
+    user.role === 'surety_admin'
       ? await pool.query(
           `UPDATE notifications SET read_at = COALESCE(read_at, now())
            WHERE id = $1
            RETURNING id, kind, message, read_at, created_at`,
-          [notificationId],
+          [notificationId]
         )
       : await pool.query(
           `UPDATE notifications SET read_at = COALESCE(read_at, now())
            WHERE id = $1 AND user_id = $2
            RETURNING id, kind, message, read_at, created_at`,
-          [notificationId, user.id],
+          [notificationId, user.id]
         );
 
   const notification = r.rows[0];
@@ -129,7 +134,7 @@ notificationsRouter.patch("/:id/read", async (req: Request, res: Response) => {
     // Generic 404 whether the row doesn't exist or belongs to someone else —
     // matches loadImporterFor's convention elsewhere in this codebase of not
     // distinguishing "not found" from "not yours" in the response.
-    res.status(404).json({ error: "not found" });
+    res.status(404).json({ error: 'not found' });
     return;
   }
 

@@ -1,7 +1,7 @@
-import http from "node:http";
-import https from "node:https";
-import { rpc } from "@stellar/stellar-sdk";
-import { registerSorobanLogger } from "./logger.js";
+import http from 'node:http';
+import https from 'node:https';
+import { rpc } from '@stellar/stellar-sdk';
+import { registerSorobanLogger } from './logger.js';
 
 // #249 — the SDK's HttpClient abstraction has no per-server agent option
 // (it also targets browsers, which have no concept of a Node http.Agent),
@@ -16,7 +16,7 @@ https.globalAgent = new https.Agent({ keepAlive: true });
 
 export function createRpcServer(url: string, opts?: rpc.Server.Options): rpc.Server {
   const server = new rpc.Server(url, {
-    allowHttp: url.startsWith("http://"),
+    allowHttp: url.startsWith('http://'),
     ...opts,
   });
   registerSorobanLogger(server);

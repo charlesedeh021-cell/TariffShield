@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkCompatibility, CompatibilityError, COMPATIBILITY_MATRIX } from './compatibility.js';
+import { checkCompatibility, CompatibilityError } from './compatibility.js';
 
 describe('SDK Contract Compatibility Matrix', () => {
   it('verifies all matrix entries pass for in-range contract versions', () => {

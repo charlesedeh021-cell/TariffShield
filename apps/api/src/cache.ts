@@ -1,7 +1,7 @@
-import Redis from "ioredis";
-import pino from "pino";
-import client from "prom-client";
-import { env } from "./config/env.js";
+import Redis from 'ioredis';
+import pino from 'pino';
+import client from 'prom-client';
+import { env } from './config/env.js';
 
 // #246 — Redis cache layer for on-chain account state (Soroban RPC reads are
 // 200-600ms; this serves repeat GET /importers/:id reads from Redis instead).
@@ -12,7 +12,7 @@ import { env } from "./config/env.js";
 // appropriate for a plain cache client, and a queue-side connection issue
 // should not be able to take caching down (or vice versa) — same isolation
 // principle `db.ts` already applies with its own dedicated `Pool`.
-const logger = pino({ name: "cache" });
+const logger = pino({ name: 'cache' });
 
 // Every call site below already fails open on a Redis error (see
 // getCachedOnChainAccount/setCachedOnChainAccount/invalidateOnChainAccount),
@@ -35,20 +35,20 @@ const redis = new Redis(env.REDIS_URL, {
 // fatal and crashes the process. Cache reads/writes below already fail open,
 // so a Redis outage should only cost latency (live RPC fallback), never
 // bring the API down.
-redis.on("error", (err) => {
-  logger.error({ err }, "Redis cache connection error");
+redis.on('error', (err) => {
+  logger.error({ err }, 'Redis cache connection error');
 });
 
 export const cacheOperationsTotal = new client.Counter({
-  name: "cache_operations_total",
-  help: "Total number of on-chain account cache operations",
-  labelNames: ["operation", "result"],
+  name: 'cache_operations_total',
+  help: 'Total number of on-chain account cache operations',
+  labelNames: ['operation', 'result'],
 });
 
 export const cacheOperationDurationSeconds = new client.Histogram({
-  name: "cache_operation_duration_seconds",
-  help: "Duration of on-chain account cache operations in seconds",
-  labelNames: ["operation"],
+  name: 'cache_operation_duration_seconds',
+  help: 'Duration of on-chain account cache operations in seconds',
+  labelNames: ['operation'],
   buckets: [0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25],
 });
 
@@ -74,23 +74,23 @@ export function onChainAccountCacheKey(importerId: string): string {
  * read in both cases, so a cache outage degrades latency, not correctness.
  */
 export async function getCachedOnChainAccount(
-  importerId: string,
+  importerId: string
 ): Promise<OnChainAccountView | null> {
   const key = onChainAccountCacheKey(importerId);
-  const endTimer = cacheOperationDurationSeconds.startTimer({ operation: "get" });
+  const endTimer = cacheOperationDurationSeconds.startTimer({ operation: 'get' });
   try {
     const raw = await redis.get(key);
     endTimer();
     if (raw === null) {
-      cacheOperationsTotal.inc({ operation: "get", result: "miss" });
+      cacheOperationsTotal.inc({ operation: 'get', result: 'miss' });
       return null;
     }
-    cacheOperationsTotal.inc({ operation: "get", result: "hit" });
+    cacheOperationsTotal.inc({ operation: 'get', result: 'hit' });
     return JSON.parse(raw) as OnChainAccountView;
   } catch (err) {
     endTimer();
-    cacheOperationsTotal.inc({ operation: "get", result: "error" });
-    logger.warn({ err, key }, "cache get failed; falling back to live RPC read");
+    cacheOperationsTotal.inc({ operation: 'get', result: 'error' });
+    logger.warn({ err, key }, 'cache get failed; falling back to live RPC read');
     return null;
   }
 }
@@ -98,16 +98,16 @@ export async function getCachedOnChainAccount(
 /** Populates the cache after a live RPC read. Never throws — a failed write just means the next read misses too. */
 export async function setCachedOnChainAccount(
   importerId: string,
-  value: OnChainAccountView,
+  value: OnChainAccountView
 ): Promise<void> {
   const key = onChainAccountCacheKey(importerId);
-  const endTimer = cacheOperationDurationSeconds.startTimer({ operation: "set" });
+  const endTimer = cacheOperationDurationSeconds.startTimer({ operation: 'set' });
   try {
-    await redis.set(key, JSON.stringify(value), "EX", ON_CHAIN_ACCOUNT_TTL_SECONDS);
-    cacheOperationsTotal.inc({ operation: "set", result: "success" });
+    await redis.set(key, JSON.stringify(value), 'EX', ON_CHAIN_ACCOUNT_TTL_SECONDS);
+    cacheOperationsTotal.inc({ operation: 'set', result: 'success' });
   } catch (err) {
-    cacheOperationsTotal.inc({ operation: "set", result: "error" });
-    logger.warn({ err, key }, "cache set failed; live data was already served to the caller");
+    cacheOperationsTotal.inc({ operation: 'set', result: 'error' });
+    logger.warn({ err, key }, 'cache set failed; live data was already served to the caller');
   } finally {
     endTimer();
   }
@@ -122,13 +122,16 @@ export async function setCachedOnChainAccount(
  */
 export async function invalidateOnChainAccount(importerId: string): Promise<void> {
   const key = onChainAccountCacheKey(importerId);
-  const endTimer = cacheOperationDurationSeconds.startTimer({ operation: "del" });
+  const endTimer = cacheOperationDurationSeconds.startTimer({ operation: 'del' });
   try {
     await redis.del(key);
-    cacheOperationsTotal.inc({ operation: "del", result: "success" });
+    cacheOperationsTotal.inc({ operation: 'del', result: 'success' });
   } catch (err) {
-    cacheOperationsTotal.inc({ operation: "del", result: "error" });
-    logger.error({ err, key }, "cache invalidation failed; stale data may be served until the 30s TTL expires");
+    cacheOperationsTotal.inc({ operation: 'del', result: 'error' });
+    logger.error(
+      { err, key },
+      'cache invalidation failed; stale data may be served until the 30s TTL expires'
+    );
   } finally {
     endTimer();
   }

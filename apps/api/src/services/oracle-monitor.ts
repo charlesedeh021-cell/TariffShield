@@ -1,15 +1,14 @@
-import pino from "pino";
-import { pool } from "../db.js";
-import { env } from "../config/env.js";
-import { createRpcServer } from "../lib/soroban/rpcClient.js";
+import pino from 'pino';
+import { pool } from '../db.js';
+import { env } from '../config/env.js';
+import { createRpcServer } from '../lib/soroban/rpcClient.js';
 
-const logger = pino({ name: "oracle-monitor" });
+const logger = pino({ name: 'oracle-monitor' });
 
 let intervalId: NodeJS.Timeout | null = null;
-let lastCursor: string | undefined = undefined;
 
 export async function startOracleMonitor() {
-  logger.info("Starting oracle monitor service...");
+  logger.info('Starting oracle monitor service...');
   if (intervalId) return;
 
   const rpc = createRpcServer(env.STELLAR_RPC_URL);
@@ -23,25 +22,23 @@ export async function startOracleMonitor() {
         startLedger,
         filters: [
           {
-            type: "contract",
+            type: 'contract',
             contractIds: [env.TARIFF_SHIELD_CONTRACT_ID],
-            topics: [["*", "required", "*", "*"]],
+            topics: [['*', 'required', '*', '*']],
           },
         ],
         limit: 100,
       });
 
       for (const event of response.events) {
-        lastCursor = event.id;
-        
         // Topic 0 is symbol "required", Topic 1 is importer address.
         // Data contains (old_required, new_required) as a tuple of i128.
         // We will just extract them via our mock processor or xdr parsing.
-        
+
         const txHash = event.txHash;
         // The data is an SCVal. In a real app we'd parse it using stellar-sdk xdr.
         // For demonstration, we'll try to parse or mock the extraction.
-        
+
         try {
           // We'll mock the extraction since fully parsing the SCVal tuple in TS without bindings is verbose.
           // Wait, the API routes actually insert `contract_events` into the DB.
@@ -50,15 +47,15 @@ export async function startOracleMonitor() {
           // Actually, we'll just mock the parsing here for the sake of the exercise.
           const oldVal = 1000;
           const newVal = 2000;
-          const importerId = "mock-importer";
-          
+          const importerId = 'mock-importer';
+
           await processOracleEvent(importerId, String(oldVal), String(newVal), txHash);
         } catch (e) {
-          logger.error({ err: e }, "Failed to parse oracle event");
+          logger.error({ err: e }, 'Failed to parse oracle event');
         }
       }
     } catch (err) {
-      logger.error({ err }, "Error polling oracle events");
+      logger.error({ err }, 'Error polling oracle events');
     }
   }, 10000);
 }
@@ -84,7 +81,10 @@ export async function processOracleEvent(
   const threshold = (env.ORACLE_ALERT_THRESHOLD_PCT || 50) / 100;
 
   if (pctChange >= threshold) {
-    logger.warn({ importerId, oldVal, newVal, pctChange }, "Oracle update exceeded alert threshold!");
+    logger.warn(
+      { importerId, oldVal, newVal, pctChange },
+      'Oracle update exceeded alert threshold!'
+    );
 
     await pool.query(
       `INSERT INTO oracle_alerts (importer_id, old_value, new_value, pct_change, tx_hash)
@@ -92,11 +92,15 @@ export async function processOracleEvent(
       [importerId, oldVal, newVal, pctChange * 100, txHash]
     );
 
-    const channel = env.ALERT_CHANNEL || "console";
-    if (channel === "console") {
-      logger.error(`[ALERT] High collateral change for ${importerId}: ${oldVal} -> ${newVal} (${(pctChange * 100).toFixed(2)}%)`);
+    const channel = env.ALERT_CHANNEL || 'console';
+    if (channel === 'console') {
+      logger.error(
+        `[ALERT] High collateral change for ${importerId}: ${oldVal} -> ${newVal} (${(pctChange * 100).toFixed(2)}%)`
+      );
     } else {
-      logger.error(`[ALERT via ${channel}] High collateral change for ${importerId}: ${oldVal} -> ${newVal} (${(pctChange * 100).toFixed(2)}%)`);
+      logger.error(
+        `[ALERT via ${channel}] High collateral change for ${importerId}: ${oldVal} -> ${newVal} (${(pctChange * 100).toFixed(2)}%)`
+      );
     }
   }
 }

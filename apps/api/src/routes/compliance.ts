@@ -1,17 +1,26 @@
-import { Router, type Request, type Response } from "express";
-import { z } from "zod";
-import { pool } from "../db.js";
-import { authMiddleware, requireRole, privacyReacceptanceGate, tosReacceptanceGate, type AuthedRequest } from "../auth.js";
+import { Router, type Request, type Response } from 'express';
+import { z } from 'zod';
+import { pool } from '../db.js';
+import {
+  authMiddleware,
+  requireRole,
+  privacyReacceptanceGate,
+  tosReacceptanceGate,
+  type AuthedRequest,
+} from '../auth.js';
 
 export const complianceRouter = Router();
 complianceRouter.use(authMiddleware);
 complianceRouter.use(privacyReacceptanceGate);
 complianceRouter.use(tosReacceptanceGate);
-complianceRouter.use(requireRole("surety_admin"));
+complianceRouter.use(requireRole('surety_admin'));
 
 // 5-minute dashboard cache keyed by surety_id (#318).
 // In production, replace with Redis with TTL.
-interface CacheEntry { data: unknown; expiresAt: number }
+interface CacheEntry {
+  data: unknown;
+  expiresAt: number;
+}
 const dashboardCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -29,13 +38,13 @@ function setCache(key: string, data: unknown): void {
 }
 
 // GET /api/v1/compliance/dashboard
-complianceRouter.get("/dashboard", async (req: Request, res: Response) => {
+complianceRouter.get('/dashboard', async (req: Request, res: Response) => {
   const user = (req as AuthedRequest).user;
   const cacheKey = `dashboard:${user.id}`;
 
   const cached = getCached(cacheKey);
   if (cached) {
-    res.set("X-Cache", "HIT");
+    res.set('X-Cache', 'HIT');
     res.json(cached);
     return;
   }
@@ -47,41 +56,49 @@ complianceRouter.get("/dashboard", async (req: Request, res: Response) => {
   // importers will replace this; the WHERE clause is already parameterised on user.id
   // so adding that FK is a one-line change.
 
-  const [kycCounts, amlCounts, bondsBelowMin, unsignedBonds, renewalsDue, openFlags, vulnerabilityFindings, resolvedFindings] =
-    await Promise.all([
-      pool.query<{ kyc_status: string; cnt: string }>(
-        `SELECT kyc_status, COUNT(*) AS cnt FROM importers GROUP BY kyc_status`,
-      ),
-      pool.query<{ severity: string; cnt: string }>(
-        `SELECT cf.severity, COUNT(*) AS cnt
+  const [
+    kycCounts,
+    amlCounts,
+    bondsBelowMin,
+    unsignedBonds,
+    renewalsDue,
+    openFlags,
+    vulnerabilityFindings,
+    resolvedFindings,
+  ] = await Promise.all([
+    pool.query<{ kyc_status: string; cnt: string }>(
+      `SELECT kyc_status, COUNT(*) AS cnt FROM importers GROUP BY kyc_status`
+    ),
+    pool.query<{ severity: string; cnt: string }>(
+      `SELECT cf.severity, COUNT(*) AS cnt
          FROM compliance_flags cf
          WHERE cf.resolution_status = 'open'
-         GROUP BY cf.severity`,
-      ),
-      pool.query<{ cnt: string }>(
-        `SELECT COUNT(*) AS cnt FROM bond_records WHERE bond_amount < cbp_minimum_required`,
-      ),
-      pool.query<{ cnt: string }>(
-        `SELECT COUNT(*) AS cnt FROM bond_records WHERE surety_fein = 'TBD'`,
-      ),
-      pool.query<{ cnt: string }>(
-        `SELECT COUNT(*) AS cnt FROM bond_records
+         GROUP BY cf.severity`
+    ),
+    pool.query<{ cnt: string }>(
+      `SELECT COUNT(*) AS cnt FROM bond_records WHERE bond_amount < cbp_minimum_required`
+    ),
+    pool.query<{ cnt: string }>(
+      `SELECT COUNT(*) AS cnt FROM bond_records WHERE surety_fein = 'TBD'`
+    ),
+    pool.query<{ cnt: string }>(
+      `SELECT COUNT(*) AS cnt FROM bond_records
          WHERE expiry_date IS NOT NULL
-           AND expiry_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '90 days'`,
-      ),
-      pool.query<{ cnt: string }>(
-        `SELECT COUNT(*) AS cnt FROM compliance_flags WHERE resolution_status = 'open'`,
-      ),
-      pool.query<{ severity: string; cnt: string }>(
-        `SELECT severity, COUNT(*) AS cnt FROM security_findings WHERE status = 'open' GROUP BY severity`,
-      ),
-      pool.query<{ severity: string; avg_time: string }>(
-        `SELECT severity, AVG(EXTRACT(EPOCH FROM (updated_at - discovery_date))) AS avg_time
+           AND expiry_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '90 days'`
+    ),
+    pool.query<{ cnt: string }>(
+      `SELECT COUNT(*) AS cnt FROM compliance_flags WHERE resolution_status = 'open'`
+    ),
+    pool.query<{ severity: string; cnt: string }>(
+      `SELECT severity, COUNT(*) AS cnt FROM security_findings WHERE status = 'open' GROUP BY severity`
+    ),
+    pool.query<{ severity: string; avg_time: string }>(
+      `SELECT severity, AVG(EXTRACT(EPOCH FROM (updated_at - discovery_date))) AS avg_time
          FROM security_findings
          WHERE status = 'resolved'
-         GROUP BY severity`,
-      ),
-    ]);
+         GROUP BY severity`
+    ),
+  ]);
 
   const kycByStatus: Record<string, number> = { pending: 0, approved: 0, rejected: 0 };
   for (const row of kycCounts.rows) {
@@ -93,14 +110,26 @@ complianceRouter.get("/dashboard", async (req: Request, res: Response) => {
     amlByRisk[row.severity] = parseInt(row.cnt, 10);
   }
 
-  const openFindingsBySeverity: Record<string, number> = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
+  const openFindingsBySeverity: Record<string, number> = {
+    CRITICAL: 0,
+    HIGH: 0,
+    MEDIUM: 0,
+    LOW: 0,
+    INFO: 0,
+  };
   for (const row of vulnerabilityFindings.rows) {
     openFindingsBySeverity[row.severity] = parseInt(row.cnt, 10);
   }
 
-  const meanTimeToRemediateBySeverity: Record<string, number> = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
+  const meanTimeToRemediateBySeverity: Record<string, number> = {
+    CRITICAL: 0,
+    HIGH: 0,
+    MEDIUM: 0,
+    LOW: 0,
+    INFO: 0,
+  };
   for (const row of resolvedFindings.rows) {
-    meanTimeToRemediateBySeverity[row.severity] = parseFloat(row.avg_time || "0");
+    meanTimeToRemediateBySeverity[row.severity] = parseFloat(row.avg_time || '0');
   }
 
   const dastScanCoverage = {
@@ -119,10 +148,10 @@ complianceRouter.get("/dashboard", async (req: Request, res: Response) => {
     generatedAt: new Date().toISOString(),
     kycByStatus,
     activeAmlFlagsByRisk: amlByRisk,
-    bondsBelowCbpMinimum: parseInt(bondsBelowMin.rows[0]?.cnt ?? "0", 10),
-    unsignedBonds: parseInt(unsignedBonds.rows[0]?.cnt ?? "0", 10),
-    bondsRenewingWithin90Days: parseInt(renewalsDue.rows[0]?.cnt ?? "0", 10),
-    totalOpenFlags: parseInt(openFlags.rows[0]?.cnt ?? "0", 10),
+    bondsBelowCbpMinimum: parseInt(bondsBelowMin.rows[0]?.cnt ?? '0', 10),
+    unsignedBonds: parseInt(unsignedBonds.rows[0]?.cnt ?? '0', 10),
+    bondsRenewingWithin90Days: parseInt(renewalsDue.rows[0]?.cnt ?? '0', 10),
+    totalOpenFlags: parseInt(openFlags.rows[0]?.cnt ?? '0', 10),
     vulnerabilityMetrics: {
       openFindingsBySeverity,
       meanTimeToRemediateBySeverity,
@@ -132,37 +161,38 @@ complianceRouter.get("/dashboard", async (req: Request, res: Response) => {
   };
 
   setCache(cacheKey, dashboard);
-  res.set("X-Cache", "MISS");
+  res.set('X-Cache', 'MISS');
   res.json(dashboard);
 });
 
-
 // DELETE /api/v1/compliance/dashboard/cache — manual cache invalidation for time-sensitive reviews
-complianceRouter.delete("/dashboard/cache", (req: Request, res: Response) => {
+complianceRouter.delete('/dashboard/cache', (req: Request, res: Response) => {
   const user = (req as AuthedRequest).user;
   dashboardCache.delete(`dashboard:${user.id}`);
-  res.json({ success: true, message: "dashboard cache cleared" });
+  res.json({ success: true, message: 'dashboard cache cleared' });
 });
 
 // GET /api/v1/compliance/flags
-complianceRouter.get("/flags", async (req: Request, res: Response) => {
+complianceRouter.get('/flags', async (req: Request, res: Response) => {
   const user = (req as AuthedRequest).user;
 
-  const query = z.object({
-    resolution_status: z.enum(["open", "resolved"]).optional(),
-    severity: z.enum(["low", "medium", "high", "critical"]).optional(),
-    importer_id: z.string().uuid().optional(),
-    limit: z.coerce.number().int().positive().max(100).default(50),
-    offset: z.coerce.number().int().min(0).default(0),
-  }).safeParse(req.query);
+  const query = z
+    .object({
+      resolution_status: z.enum(['open', 'resolved']).optional(),
+      severity: z.enum(['low', 'medium', 'high', 'critical']).optional(),
+      importer_id: z.string().uuid().optional(),
+      limit: z.coerce.number().int().positive().max(100).default(50),
+      offset: z.coerce.number().int().min(0).default(0),
+    })
+    .safeParse(req.query);
 
   if (!query.success) {
-    res.status(400).json({ error: "invalid query parameters" });
+    res.status(400).json({ error: 'invalid query parameters' });
     return;
   }
 
   const { resolution_status, severity, importer_id, limit, offset } = query.data;
-  const conditions: string[] = ["cf.surety_id = $1"];
+  const conditions: string[] = ['cf.surety_id = $1'];
   const params: unknown[] = [user.id];
   let idx = 2;
 
@@ -179,7 +209,7 @@ complianceRouter.get("/flags", async (req: Request, res: Response) => {
     params.push(importer_id);
   }
 
-  const where = conditions.join(" AND ");
+  const where = conditions.join(' AND ');
 
   const [flags, total] = await Promise.all([
     pool.query(
@@ -191,38 +221,38 @@ complianceRouter.get("/flags", async (req: Request, res: Response) => {
        WHERE ${where}
        ORDER BY cf.created_at DESC
        LIMIT $${idx} OFFSET $${idx + 1}`,
-      [...params, limit, offset],
+      [...params, limit, offset]
     ),
     pool.query<{ cnt: string }>(
       `SELECT COUNT(*) AS cnt FROM compliance_flags cf WHERE ${where}`,
-      params,
+      params
     ),
   ]);
 
   res.json({
     flags: flags.rows,
-    total: parseInt(total.rows[0]?.cnt ?? "0", 10),
+    total: parseInt(total.rows[0]?.cnt ?? '0', 10),
     limit,
     offset,
   });
 });
 
 // POST /api/v1/compliance/flags/:id/resolve — resolve a flag with a mandatory note
-complianceRouter.post("/flags/:id/resolve", async (req: Request, res: Response) => {
+complianceRouter.post('/flags/:id/resolve', async (req: Request, res: Response) => {
   const user = (req as AuthedRequest).user;
 
   const parse = z.object({ resolution_note: z.string().min(10) }).safeParse(req.body);
   if (!parse.success) {
-    res.status(400).json({ error: "resolution_note is required (min 10 chars)" });
+    res.status(400).json({ error: 'resolution_note is required (min 10 chars)' });
     return;
   }
 
   const flag = await pool.query(
     `SELECT id FROM compliance_flags WHERE id = $1 AND surety_id = $2 AND resolution_status = 'open'`,
-    [req.params.id, user.id],
+    [req.params.id, user.id]
   );
   if (!flag.rowCount) {
-    res.status(404).json({ error: "flag not found or already resolved" });
+    res.status(404).json({ error: 'flag not found or already resolved' });
     return;
   }
 
@@ -231,7 +261,7 @@ complianceRouter.post("/flags/:id/resolve", async (req: Request, res: Response) 
      SET resolution_status = 'resolved', resolved_by = $1,
          resolution_note = $2, resolved_at = now(), updated_at = now()
      WHERE id = $3`,
-    [user.id, parse.data.resolution_note, req.params.id],
+    [user.id, parse.data.resolution_note, req.params.id]
   );
 
   // Invalidate dashboard cache so next request reflects the resolution.
@@ -241,7 +271,7 @@ complianceRouter.post("/flags/:id/resolve", async (req: Request, res: Response) 
 });
 
 // GET /api/v1/compliance/reports — list available compliance reports for this surety
-complianceRouter.get("/reports", async (req: Request, res: Response) => {
+complianceRouter.get('/reports', async (req: Request, res: Response) => {
   const user = (req as AuthedRequest).user;
 
   const reports = await pool.query(
@@ -249,22 +279,22 @@ complianceRouter.get("/reports", async (req: Request, res: Response) => {
      FROM compliance_reports
      WHERE surety_id = $1
      ORDER BY report_month DESC`,
-    [user.id],
+    [user.id]
   );
   res.json({ reports: reports.rows });
 });
 
 // GET /api/v1/compliance/reports/:id/download — pre-signed S3 URL for the PDF
-complianceRouter.get("/reports/:id/download", async (req: Request, res: Response) => {
+complianceRouter.get('/reports/:id/download', async (req: Request, res: Response) => {
   const user = (req as AuthedRequest).user;
 
   const report = await pool.query(
     `SELECT pdf_s3_key FROM compliance_reports WHERE id = $1 AND surety_id = $2`,
-    [req.params.id, user.id],
+    [req.params.id, user.id]
   );
   const reportRow = report.rows[0];
   if (!report.rowCount || !reportRow?.pdf_s3_key) {
-    res.status(404).json({ error: "report PDF not available" });
+    res.status(404).json({ error: 'report PDF not available' });
     return;
   }
 

@@ -1,16 +1,15 @@
-import { withSentryConfig } from "@sentry/nextjs";
-import withBundleAnalyzerInit from "@next/bundle-analyzer";
-import type { NextConfig } from "next";
+import { withSentryConfig } from '@sentry/nextjs';
+import withBundleAnalyzerInit from '@next/bundle-analyzer';
+import type { NextConfig } from 'next';
 
 const withBundleAnalyzer = withBundleAnalyzerInit({
-  enabled: process.env.ANALYZE === "true",
+  enabled: process.env.ANALYZE === 'true',
 });
 
 // CDN URL for static assets (Vercel Edge Network / Cloudflare). Only applied
 // in production — dev must keep serving assets same-origin so paths resolve.
 const cdnUrl = process.env.NEXT_PUBLIC_CDN_URL;
-const assetPrefix =
-  process.env.NODE_ENV === "production" && cdnUrl ? cdnUrl : undefined;
+const assetPrefix = process.env.NODE_ENV === 'production' && cdnUrl ? cdnUrl : undefined;
 
 // #260: Web Worker support (lib/workers/yieldWorker.ts, instantiated via
 // `new Worker(new URL("./yieldWorker.ts", import.meta.url))`) works with
@@ -27,14 +26,12 @@ const config: NextConfig = {
   async headers() {
     return [
       {
-        source: "/_next/static/:path*",
-        headers: [
-          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
-        ],
+        source: '/_next/static/:path*',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
       },
       {
-        source: "/_next/data/:path*",
-        headers: [{ key: "Cache-Control", value: "no-cache" }],
+        source: '/_next/data/:path*',
+        headers: [{ key: 'Cache-Control', value: 'no-cache' }],
       },
     ];
   },
@@ -43,9 +40,9 @@ export default withSentryConfig(withBundleAnalyzer(config), {
   // For all available options, see:
   // https://www.npmjs.com/package/@sentry/webpack-plugin#options
 
-  org: "",
+  org: '',
 
-  project: "",
+  project: '',
 
   // Only print logs for uploading source maps in CI
   silent: !process.env.CI,
@@ -60,7 +57,7 @@ export default withSentryConfig(withBundleAnalyzer(config), {
   // This can increase your server load as well as your hosting bill.
   // Note: Check that the configured route will not match with your Next.js middleware, otherwise reporting of client-
   // side errors will fail.
-  tunnelRoute: "/monitoring",
+  tunnelRoute: '/monitoring',
 
   webpack: {
     // Enables automatic instrumentation of Vercel Cron Monitors. (Does not yet work with App Router route handlers.)
@@ -74,5 +71,5 @@ export default withSentryConfig(withBundleAnalyzer(config), {
       // Automatically tree-shake Sentry logger statements to reduce bundle size
       removeDebugLogging: true,
     },
-  }
+  },
 });

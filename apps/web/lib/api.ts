@@ -1,10 +1,9 @@
-"use client";
+'use client';
 
-import { getToken } from "./auth";
+import { getToken } from './auth';
 
 const BASE =
-  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL) ||
-  "http://localhost:3002";
+  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) || 'http://localhost:3002';
 
 export class ApiError extends Error {
   status: number;
@@ -66,14 +65,17 @@ export interface ImporterMetrics {
   refreshedAt: string;
 }
 
-async function request<T>(path: string, options: { method?: string; body?: unknown; auth?: boolean } = {}): Promise<T> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+async function request<T>(
+  path: string,
+  options: { method?: string; body?: unknown; auth?: boolean } = {}
+): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (options.auth !== false) {
     const t = getToken();
-    if (t) headers["Authorization"] = `Bearer ${t}`;
+    if (t) headers['Authorization'] = `Bearer ${t}`;
   }
   const res = await fetch(`${BASE}${path}`, {
-    method: options.method ?? "GET",
+    method: options.method ?? 'GET',
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
@@ -89,20 +91,32 @@ async function request<T>(path: string, options: { method?: string; body?: unkno
 const importerPrefetchCache = new Map<string, Promise<ImporterDetail>>();
 
 export const api = {
-  signup: (b: { email: string; password: string; role: "importer" | "surety_admin" }) =>
-    request<{ token: string; user: import("./auth").AuthUser }>("/auth/signup", { method: "POST", body: b, auth: false }),
+  signup: (b: { email: string; password: string; role: 'importer' | 'surety_admin' }) =>
+    request<{ token: string; user: import('./auth').AuthUser }>('/auth/signup', {
+      method: 'POST',
+      body: b,
+      auth: false,
+    }),
   login: (b: { email: string; password: string }) =>
-    request<{ token: string; user: import("./auth").AuthUser }>("/auth/login", { method: "POST", body: b, auth: false }),
+    request<{ token: string; user: import('./auth').AuthUser }>('/auth/login', {
+      method: 'POST',
+      body: b,
+      auth: false,
+    }),
 
-  createImporter: (b: { legalName: string; ein?: string; bondId: number; initialRequiredCollateral: string }) =>
-    request<{ importer: Importer }>("/importers", { method: "POST", body: b }),
-  listImporters: () => request<{ importers: Importer[] }>("/importers"),
-  getStats: () => request<{ metrics: ImporterMetrics }>("/importers/stats"),
+  createImporter: (b: {
+    legalName: string;
+    ein?: string;
+    bondId: number;
+    initialRequiredCollateral: string;
+  }) => request<{ importer: Importer }>('/importers', { method: 'POST', body: b }),
+  listImporters: () => request<{ importers: Importer[] }>('/importers'),
+  getStats: () => request<{ metrics: ImporterMetrics }>('/importers/stats'),
   // #255: cursor-paginated event log — fetched lazily by the dashboard's
   // infinite-scroll section instead of being inlined into getImporter().
   getImporterEventsCursor: (id: string, cursor?: string | null, limit = 20) => {
     const params = new URLSearchParams({ limit: String(limit) });
-    if (cursor) params.set("cursor", cursor);
+    if (cursor) params.set('cursor', cursor);
     return request<EventsPage>(`/importers/${id}/events?${params.toString()}`);
   },
   prefetchImporter: (id: string) => {
@@ -120,24 +134,42 @@ export const api = {
     return request<ImporterDetail>(`/importers/${id}`);
   },
   uploadTariffCsv: (id: string, b: { filename?: string; annualDutyTotal: number }) =>
-    request<{ annualDutyTotal: number; bondFaceValue: number; requiredCollateralStroops: string; txHash: string; txUrl: string }>(
-      `/importers/${id}/upload-tariff-csv`, { method: "POST", body: b },
-    ),
-  deposit: (id: string, b: { amountStroops: string; bucket: "collateral" | "reserve" }) =>
-    request<{ txHash: string; txUrl: string }>(`/importers/${id}/deposit`, { method: "POST", body: b }),
+    request<{
+      annualDutyTotal: number;
+      bondFaceValue: number;
+      requiredCollateralStroops: string;
+      txHash: string;
+      txUrl: string;
+    }>(`/importers/${id}/upload-tariff-csv`, { method: 'POST', body: b }),
+  deposit: (id: string, b: { amountStroops: string; bucket: 'collateral' | 'reserve' }) =>
+    request<{ txHash: string; txUrl: string }>(`/importers/${id}/deposit`, {
+      method: 'POST',
+      body: b,
+    }),
   autoTopUp: (id: string) =>
-    request<{ movedStroops: string; txHash: string; txUrl: string }>(`/importers/${id}/auto-top-up`, { method: "POST" }),
+    request<{ movedStroops: string; txHash: string; txUrl: string }>(
+      `/importers/${id}/auto-top-up`,
+      { method: 'POST' }
+    ),
   withdraw: (id: string, b: { amountStroops: string }) =>
-    request<{ txHash: string; txUrl: string }>(`/importers/${id}/withdraw`, { method: "POST", body: b }),
+    request<{ txHash: string; txUrl: string }>(`/importers/${id}/withdraw`, {
+      method: 'POST',
+      body: b,
+    }),
   accrueYield: (id: string, b: { amountStroops: string }) =>
-    request<{ txHash: string; txUrl: string }>(`/importers/${id}/accrue-yield`, { method: "POST", body: b }),
+    request<{ txHash: string; txUrl: string }>(`/importers/${id}/accrue-yield`, {
+      method: 'POST',
+      body: b,
+    }),
   clawback: (id: string) =>
-    request<{ clawedStroops: string; txHash: string; txUrl: string }>(`/importers/${id}/clawback`, { method: "POST" }),
+    request<{ clawedStroops: string; txHash: string; txUrl: string }>(`/importers/${id}/clawback`, {
+      method: 'POST',
+    }),
 };
 
 export function stroopsToXlm(stroops: string | bigint | number): string {
-  const n = typeof stroops === "string" ? BigInt(stroops) : BigInt(stroops);
+  const n = typeof stroops === 'string' ? BigInt(stroops) : BigInt(stroops);
   const whole = n / 10000000n;
   const frac = n % 10000000n;
-  return `${whole}.${frac.toString().padStart(7, "0").slice(0, 4)}`;
+  return `${whole}.${frac.toString().padStart(7, '0').slice(0, 4)}`;
 }

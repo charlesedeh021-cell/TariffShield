@@ -1,5 +1,8 @@
-import { PoolClient } from "pg";
-import { monthsBetweenInclusive, createContractEventsPartition } from "../lib/contract-events-partitions.js";
+import { PoolClient } from 'pg';
+import {
+  monthsBetweenInclusive,
+  createContractEventsPartition,
+} from '../lib/contract-events-partitions.js';
 
 // #228 — range-partition contract_events by month.
 //
@@ -74,11 +77,11 @@ export async function up(client: PoolClient): Promise<void> {
   // 3. Determine which months need partitions: every month spanned by the
   //    existing data, plus a lookahead buffer past the current month.
   const { rows } = await client.query<{ min_created: Date | null; max_created: Date | null }>(
-    `SELECT MIN(created_at) AS min_created, MAX(created_at) AS max_created FROM contract_events_pre_partition;`,
+    `SELECT MIN(created_at) AS min_created, MAX(created_at) AS max_created FROM contract_events_pre_partition;`
   );
   const now = new Date();
   const lookaheadEnd = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + FUTURE_MONTH_LOOKAHEAD_MONTHS, 1),
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + FUTURE_MONTH_LOOKAHEAD_MONTHS, 1)
   );
   const earliest = rows[0]?.min_created ?? now;
   const latest = rows[0]?.max_created ?? now;
@@ -91,7 +94,9 @@ export async function up(client: PoolClient): Promise<void> {
   // Safety net: catch any row whose created_at falls outside the computed
   // range (clock skew, a manually-inserted historical row) so the
   // migration can never lose data to a missing partition.
-  await client.query(`CREATE TABLE IF NOT EXISTS contract_events_default PARTITION OF contract_events DEFAULT;`);
+  await client.query(
+    `CREATE TABLE IF NOT EXISTS contract_events_default PARTITION OF contract_events DEFAULT;`
+  );
   await client.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS contract_events_default_ledger_event_uniq
       ON contract_events_default (ledger_sequence, event_index)
@@ -102,10 +107,18 @@ export async function up(client: PoolClient): Promise<void> {
   //    future partition — this is the "global partitioned index" option
   //    from the issue's acceptance criteria, used for the two importer-
   //    scoped indexes plus the pagination and BRIN indexes.
-  await client.query(`CREATE INDEX idx_contract_events_importer ON contract_events(importer_id, created_at DESC);`);
-  await client.query(`CREATE INDEX idx_contract_events_importer_kind ON contract_events(importer_id, kind, created_at DESC);`);
-  await client.query(`CREATE INDEX idx_contract_events_importer_id_pagination ON contract_events(importer_id, id DESC);`);
-  await client.query(`CREATE INDEX idx_contract_events_created_at_brin ON contract_events USING BRIN (created_at) WITH (pages_per_range = 32);`);
+  await client.query(
+    `CREATE INDEX idx_contract_events_importer ON contract_events(importer_id, created_at DESC);`
+  );
+  await client.query(
+    `CREATE INDEX idx_contract_events_importer_kind ON contract_events(importer_id, kind, created_at DESC);`
+  );
+  await client.query(
+    `CREATE INDEX idx_contract_events_importer_id_pagination ON contract_events(importer_id, id DESC);`
+  );
+  await client.query(
+    `CREATE INDEX idx_contract_events_created_at_brin ON contract_events USING BRIN (created_at) WITH (pages_per_range = 32);`
+  );
 
   // 5. Copy every existing row across in a single INSERT ... SELECT (one
   //    sequential scan + append, no per-row round trips).
@@ -119,15 +132,15 @@ export async function up(client: PoolClient): Promise<void> {
   // 6. Verify no rows were lost before dropping the source table. Any
   //    mismatch throws, which rolls back the whole migration transaction.
   const before = await client.query<{ count: string }>(
-    `SELECT COUNT(*)::text AS count FROM contract_events_pre_partition;`,
+    `SELECT COUNT(*)::text AS count FROM contract_events_pre_partition;`
   );
   const after = await client.query<{ count: string }>(
-    `SELECT COUNT(*)::text AS count FROM contract_events;`,
+    `SELECT COUNT(*)::text AS count FROM contract_events;`
   );
   if (before.rows[0]!.count !== after.rows[0]!.count) {
     throw new Error(
       `contract_events partition migration row-count mismatch: ` +
-        `${before.rows[0]!.count} rows before, ${after.rows[0]!.count} rows after. Aborting.`,
+        `${before.rows[0]!.count} rows before, ${after.rows[0]!.count} rows after. Aborting.`
     );
   }
 
@@ -158,10 +171,18 @@ export async function down(client: PoolClient): Promise<void> {
     FROM contract_events_partitioned;
   `);
 
-  await client.query(`CREATE INDEX idx_contract_events_importer ON contract_events(importer_id, created_at DESC);`);
-  await client.query(`CREATE INDEX idx_contract_events_importer_kind ON contract_events(importer_id, kind, created_at DESC);`);
-  await client.query(`CREATE INDEX idx_contract_events_importer_id_pagination ON contract_events(importer_id, id DESC);`);
-  await client.query(`CREATE INDEX idx_contract_events_created_at_brin ON contract_events USING BRIN (created_at) WITH (pages_per_range = 32);`);
+  await client.query(
+    `CREATE INDEX idx_contract_events_importer ON contract_events(importer_id, created_at DESC);`
+  );
+  await client.query(
+    `CREATE INDEX idx_contract_events_importer_kind ON contract_events(importer_id, kind, created_at DESC);`
+  );
+  await client.query(
+    `CREATE INDEX idx_contract_events_importer_id_pagination ON contract_events(importer_id, id DESC);`
+  );
+  await client.query(
+    `CREATE INDEX idx_contract_events_created_at_brin ON contract_events USING BRIN (created_at) WITH (pages_per_range = 32);`
+  );
   await client.query(`
     CREATE UNIQUE INDEX idx_contract_events_ledger_event
       ON contract_events(ledger_sequence, event_index)

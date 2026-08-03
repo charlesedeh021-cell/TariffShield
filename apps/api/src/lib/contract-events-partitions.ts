@@ -29,10 +29,10 @@ export interface Queryable {
  * a different (wrong) partition boundary.
  */
 export function monthRange(year: number, month1to12: number): MonthRange {
-  const mm = String(month1to12).padStart(2, "0");
+  const mm = String(month1to12).padStart(2, '0');
   const nextYear = month1to12 === 12 ? year + 1 : year;
   const nextMonth = month1to12 === 12 ? 1 : month1to12 + 1;
-  const nextMm = String(nextMonth).padStart(2, "0");
+  const nextMm = String(nextMonth).padStart(2, '0');
   return {
     partitionName: `contract_events_${year}_${mm}`,
     fromDate: `${year}-${mm}-01T00:00:00Z`,
@@ -93,16 +93,16 @@ export function monthsBetweenInclusive(start: Date, end: Date): MonthRange[] {
  */
 export async function createContractEventsPartition(
   client: Queryable,
-  range: MonthRange,
+  range: MonthRange
 ): Promise<void> {
   await client.query(
     `CREATE TABLE IF NOT EXISTS ${range.partitionName}
        PARTITION OF contract_events
-       FOR VALUES FROM ('${range.fromDate}') TO ('${range.toDate}');`,
+       FOR VALUES FROM ('${range.fromDate}') TO ('${range.toDate}');`
   );
   await client.query(
     `CREATE UNIQUE INDEX IF NOT EXISTS ${range.partitionName}_ledger_event_uniq
        ON ${range.partitionName} (ledger_sequence, event_index)
-       WHERE ledger_sequence IS NOT NULL AND event_index IS NOT NULL;`,
+       WHERE ledger_sequence IS NOT NULL AND event_index IS NOT NULL;`
   );
 }

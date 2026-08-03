@@ -9,48 +9,48 @@
  * non-DB-dependent code paths without a full .env.
  */
 
-import { describe, it } from "node:test";
-import assert from "node:assert/strict";
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
 
 function stub(name: string, value: string) {
   if (!process.env[name]) process.env[name] = value;
 }
 
-stub("DATABASE_URL", "postgres://fake:fake@localhost:1/fake");
-stub("JWT_SECRET", "test-stub-jwt-secret-not-used-by-this-suite-00000");
-stub("STELLAR_RPC_URL", "https://soroban-testnet.stellar.org");
-stub("STELLAR_HORIZON_URL", "https://horizon-testnet.stellar.org");
-stub("STELLAR_NETWORK_PASSPHRASE", "Test SDF Network ; September 2015");
-stub("TARIFF_SHIELD_CONTRACT_ID", "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-stub("PLATFORM_STELLAR_SECRET", "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB");
-stub("SURETY_STELLAR_SECRET", "SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC");
+stub('DATABASE_URL', 'postgres://fake:fake@localhost:1/fake');
+stub('JWT_SECRET', 'test-stub-jwt-secret-not-used-by-this-suite-00000');
+stub('STELLAR_RPC_URL', 'https://soroban-testnet.stellar.org');
+stub('STELLAR_HORIZON_URL', 'https://horizon-testnet.stellar.org');
+stub('STELLAR_NETWORK_PASSPHRASE', 'Test SDF Network ; September 2015');
+stub('TARIFF_SHIELD_CONTRACT_ID', 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+stub('PLATFORM_STELLAR_SECRET', 'SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB');
+stub('SURETY_STELLAR_SECRET', 'SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC');
 
-const { getPoolStats, pool } = await import("../../db.js");
+const { getPoolStats, pool } = await import('../../db.js');
 
-describe("db pool configuration (#241)", () => {
+describe('db pool configuration (#241)', () => {
   it("getPoolStats returns the pool's own counters without opening a connection", () => {
     const stats = getPoolStats();
-    assert.equal(typeof stats.totalCount, "number");
-    assert.equal(typeof stats.idleCount, "number");
-    assert.equal(typeof stats.waitingCount, "number");
+    assert.equal(typeof stats.totalCount, 'number');
+    assert.equal(typeof stats.idleCount, 'number');
+    assert.equal(typeof stats.waitingCount, 'number');
     // No connection has been attempted yet, so all counters start at 0.
     assert.equal(stats.totalCount, 0);
     assert.equal(stats.idleCount, 0);
     assert.equal(stats.waitingCount, 0);
   });
 
-  it("pool.query rejects against an unreachable database instead of hanging", async () => {
-    await assert.rejects(() => pool.query("SELECT 1"));
+  it('pool.query rejects against an unreachable database instead of hanging', async () => {
+    await assert.rejects(() => pool.query('SELECT 1'));
   });
 });
 
-describe("GET /health/db route (#241)", () => {
-  it("reports status failed with pool stats when the database is unreachable", async () => {
-    const { healthRouter } = await import("../../routes/health.js");
+describe('GET /health/db route (#241)', () => {
+  it('reports status failed with pool stats when the database is unreachable', async () => {
+    const { healthRouter } = await import('../../routes/health.js');
     const layer = (healthRouter.stack as any[]).find(
-      (l) => l.route?.path === "/db" && l.route.methods.get,
+      (l) => l.route?.path === '/db' && l.route.methods.get
     );
-    assert.ok(layer, "GET /db route must be registered on healthRouter");
+    assert.ok(layer, 'GET /db route must be registered on healthRouter');
 
     const handler = layer.route.stack[0].handle;
     let statusCode = 200;
@@ -70,7 +70,7 @@ describe("GET /health/db route (#241)", () => {
 
     assert.equal(statusCode, 503);
     assert.deepEqual(body, {
-      status: "failed",
+      status: 'failed',
       pool: { totalCount: 0, idleCount: 0, waitingCount: 0 },
     });
   });

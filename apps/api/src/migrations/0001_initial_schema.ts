@@ -1,4 +1,4 @@
-import { PoolClient } from "pg";
+import { PoolClient } from 'pg';
 
 export async function up(client: PoolClient): Promise<void> {
   await client.query(`

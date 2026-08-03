@@ -1,5 +1,5 @@
-import { Router, type Request, type Response } from "express";
-import { z } from "zod";
+import { Router, type Request, type Response } from 'express';
+import { z } from 'zod';
 import {
   pool,
   recordAuthenticationAttempt,
@@ -13,30 +13,39 @@ import {
   validateRefreshToken,
   rotateRefreshToken,
   revokeRefreshToken,
-} from "../db.js";
-import { hashPassword, verifyPassword, signToken, authMiddleware, MAX_SESSIONS, type AuthedRequest } from "../auth.js";
-import { env } from "../config/env.js";
-import { createHash, randomBytes } from "crypto";
+} from '../db.js';
+import {
+  hashPassword,
+  verifyPassword,
+  signToken,
+  authMiddleware,
+  MAX_SESSIONS,
+  type AuthedRequest,
+} from '../auth.js';
+import { env } from '../config/env.js';
+import { createHash, randomBytes } from 'crypto';
 
 export const authRouter = Router();
 
-const ACCESS_TOKEN_EXPIRY = "15m";
 const REFRESH_TOKEN_EXPIRY_DAYS = 30;
 
 function hashToken(raw: string): string {
-  return createHash("sha256").update(raw).digest("hex");
+  return createHash('sha256').update(raw).digest('hex');
 }
 
-function generateRefreshTokenPair(userId: string, req: { ip?: string; get?: (h: string) => string | undefined }) {
-  const rawToken = randomBytes(64).toString("hex");
+function generateRefreshTokenPair(
+  userId: string,
+  req: { ip?: string; get?: (h: string) => string | undefined }
+) {
+  const rawToken = randomBytes(64).toString('hex');
   const tokenHash = hashToken(rawToken);
   const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
   const tokenPromise = createRefreshToken(
     userId,
     tokenHash,
     expiresAt,
-    req.get?.("user-agent") ?? undefined,
-    req.ip ?? undefined,
+    req.get?.('user-agent') ?? undefined,
+    req.ip ?? undefined
   );
   return { rawToken, tokenPromise, expiresAt };
 }
@@ -44,18 +53,18 @@ function generateRefreshTokenPair(userId: string, req: { ip?: string; get?: (h: 
 const SignupSchema = z.object({
   email: z.string().email().toLowerCase(),
   password: z.string().min(8),
-  role: z.enum(["importer", "surety_admin"]).default("importer"),
+  role: z.enum(['importer', 'surety_admin']).default('importer'),
   accept_tos: z.boolean().refine((val) => val === true, {
-    message: "Terms of Service must be accepted",
+    message: 'Terms of Service must be accepted',
   }),
   // #322 — accept the current privacy policy version at signup
   privacyPolicyVersionId: z.string().optional(),
 });
 
-authRouter.post("/signup", async (req: Request, res: Response) => {
+authRouter.post('/signup', async (req: Request, res: Response) => {
   const parse = SignupSchema.safeParse(req.body);
   if (!parse.success) {
-    res.status(400).json({ error: "invalid input", details: parse.error.issues });
+    res.status(400).json({ error: 'invalid input', details: parse.error.issues });
     return;
   }
   const { email, password, role, privacyPolicyVersionId } = parse.data;
@@ -65,14 +74,14 @@ authRouter.post("/signup", async (req: Request, res: Response) => {
     let policyVersionId = privacyPolicyVersionId;
     if (!policyVersionId) {
       const latestPolicy = await pool.query(
-        "SELECT version_id FROM privacy_policy_versions ORDER BY effective_date DESC LIMIT 1",
+        'SELECT version_id FROM privacy_policy_versions ORDER BY effective_date DESC LIMIT 1'
       );
       policyVersionId = latestPolicy.rows[0]?.version_id;
     }
 
     const result = await pool.query(
-      "INSERT INTO users (email, password_hash, role) VALUES ($1, $2, $3) RETURNING id, email, role",
-      [email, hash, role],
+      'INSERT INTO users (email, password_hash, role) VALUES ($1, $2, $3) RETURNING id, email, role',
+      [email, hash, role]
     );
     const u = result.rows[0]!;
 
@@ -83,32 +92,38 @@ authRouter.post("/signup", async (req: Request, res: Response) => {
            (user_id, policy_version_id, ip_address, acceptance_channel)
          VALUES ($1, $2, $3, 'signup')
          ON CONFLICT (user_id, policy_version_id) DO NOTHING`,
-        [u.id, policyVersionId, req.ip ?? null],
+        [u.id, policyVersionId, req.ip ?? null]
       );
     }
 
     // Record ToS acceptance at signup (#321)
-    const latestTos = await pool.query("SELECT version_id FROM tos_versions ORDER BY effective_date DESC LIMIT 1");
+    const latestTos = await pool.query(
+      'SELECT version_id FROM tos_versions ORDER BY effective_date DESC LIMIT 1'
+    );
     if (latestTos.rowCount) {
       await pool.query(
         `INSERT INTO tos_acceptances (user_id, tos_version, accepted_at, ip_address, user_agent, acceptance_method)
          VALUES ($1, $2, now(), $3, $4, 'signup')`,
-        [u.id, latestTos.rows[0]?.version_id, req.ip ?? null, req.get("user-agent") ?? null],
+        [u.id, latestTos.rows[0]?.version_id, req.ip ?? null, req.get('user-agent') ?? null]
       );
     }
 
     // #324 — surety_admin accounts start with a pending license verification record.
     // Operational routes (clawback, accrue-yield) are blocked until a platform admin
     // marks the record as 'verified' after checking NAIC / state DOI licensing data.
-    if (role === "surety_admin") {
+    if (role === 'surety_admin') {
       await pool.query(
         `INSERT INTO surety_license_verifications (user_id) VALUES ($1)
          ON CONFLICT (user_id) DO NOTHING`,
-        [u.id],
+        [u.id]
       );
     }
 
-    const sessionId = await createSession(u.id, req.ip ?? undefined, req.get("user-agent") ?? undefined);
+    const sessionId = await createSession(
+      u.id,
+      req.ip ?? undefined,
+      req.get('user-agent') ?? undefined
+    );
     const refreshToken = generateRefreshTokenPair(u.id, req);
     await refreshToken.tokenPromise;
     res.json({
@@ -118,8 +133,8 @@ authRouter.post("/signup", async (req: Request, res: Response) => {
     });
   } catch (err) {
     const e = err as { code?: string };
-    if (e.code === "23505") {
-      res.status(409).json({ error: "email already registered" });
+    if (e.code === '23505') {
+      res.status(409).json({ error: 'email already registered' });
       return;
     }
     throw err;
@@ -131,43 +146,44 @@ const LoginSchema = z.object({
   password: z.string(),
 });
 
-authRouter.post("/login", async (req: Request, res: Response) => {
+authRouter.post('/login', async (req: Request, res: Response) => {
   const parse = LoginSchema.safeParse(req.body);
   if (!parse.success) {
-    res.status(400).json({ error: "invalid input" });
+    res.status(400).json({ error: 'invalid input' });
     return;
   }
 
   const email = parse.data.email;
-  const ipAddress = req.ip ?? "unknown";
-  const userAgent = req.get("user-agent") ?? "unknown";
+  const ipAddress = req.ip ?? 'unknown';
+  const userAgent = req.get('user-agent') ?? 'unknown';
 
   const failedAttempts = await getFailedAuthAttempts(email, 30);
   if (failedAttempts >= 10) {
-    await recordSecurityIncident("P1", `Brute-force attack detected on account ${email}`, email);
-    res.status(429).json({ error: "too many failed attempts, account locked for 30 minutes" });
+    await recordSecurityIncident('P1', `Brute-force attack detected on account ${email}`, email);
+    res.status(429).json({ error: 'too many failed attempts, account locked for 30 minutes' });
     await recordAuthenticationAttempt(email, false, undefined, ipAddress, userAgent);
     return;
   }
 
-  const r = await pool.query("SELECT id, email, password_hash, role, locked_until FROM users WHERE email = $1", [
-    email,
-  ]);
+  const r = await pool.query(
+    'SELECT id, email, password_hash, role, locked_until FROM users WHERE email = $1',
+    [email]
+  );
   if (r.rowCount === 0) {
     await recordAuthenticationAttempt(email, false, undefined, ipAddress, userAgent);
-    res.status(401).json({ error: "invalid credentials" });
+    res.status(401).json({ error: 'invalid credentials' });
     return;
   }
 
   const u = r.rows[0]!;
   if (u.locked_until && new Date(u.locked_until) > new Date()) {
-    res.status(403).json({ error: "account temporarily locked, try again later" });
+    res.status(403).json({ error: 'account temporarily locked, try again later' });
     return;
   }
 
   if (!(await verifyPassword(parse.data.password, u.password_hash))) {
     await recordAuthenticationAttempt(email, false, u.id, ipAddress, userAgent);
-    res.status(401).json({ error: "invalid credentials" });
+    res.status(401).json({ error: 'invalid credentials' });
     return;
   }
 
@@ -192,7 +208,7 @@ authRouter.post("/login", async (req: Request, res: Response) => {
   });
 });
 
-authRouter.post("/logout", authMiddleware, async (req: Request, res: Response) => {
+authRouter.post('/logout', authMiddleware, async (req: Request, res: Response) => {
   const { sessionId } = (req as AuthedRequest).user;
   if (sessionId) {
     await revokeSession(sessionId);
@@ -201,7 +217,7 @@ authRouter.post("/logout", authMiddleware, async (req: Request, res: Response) =
   if (tokenHash) {
     await revokeRefreshToken(tokenHash);
   }
-  res.json({ message: "logged out" });
+  res.json({ message: 'logged out' });
 });
 
 // ── #235: POST /auth/refresh — rotate refresh token and issue new access token ──
@@ -210,48 +226,52 @@ const RefreshSchema = z.object({
   refreshToken: z.string().min(1),
 });
 
-authRouter.post("/refresh", async (req: Request, res: Response) => {
+authRouter.post('/refresh', async (req: Request, res: Response) => {
   const parse = RefreshSchema.safeParse(req.body);
   if (!parse.success) {
-    res.status(400).json({ error: "invalid input" });
+    res.status(400).json({ error: 'invalid input' });
     return;
   }
 
   const tokenHash = hashToken(parse.data.refreshToken);
   const existing = await validateRefreshToken(tokenHash);
   if (!existing) {
-    res.status(401).json({ error: "invalid or expired refresh token" });
+    res.status(401).json({ error: 'invalid or expired refresh token' });
     return;
   }
 
-  const newRefreshToken = randomBytes(64).toString("hex");
+  const newRefreshToken = randomBytes(64).toString('hex');
   const newRefreshHash = hashToken(newRefreshToken);
   const newExpiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
 
-  const newId = await rotateRefreshToken(existing.id, newRefreshHash, newExpiresAt);
+  await rotateRefreshToken(existing.id, newRefreshHash, newExpiresAt);
 
   const user = await pool.query<{ email: string; role: string }>(
-    "SELECT email, role FROM users WHERE id = $1",
-    [existing.userId],
+    'SELECT email, role FROM users WHERE id = $1',
+    [existing.userId]
   );
   if (!user.rowCount) {
-    res.status(401).json({ error: "user not found" });
+    res.status(401).json({ error: 'user not found' });
     return;
   }
 
   const u = user.rows[0]!;
-  const sessionId = await createSession(existing.userId, req.ip ?? undefined, req.get("user-agent") ?? undefined);
+  const sessionId = await createSession(
+    existing.userId,
+    req.ip ?? undefined,
+    req.get('user-agent') ?? undefined
+  );
   const accessToken = signToken({
     id: existing.userId,
     email: u.email,
-    role: u.role as "importer" | "surety_admin",
+    role: u.role as 'importer' | 'surety_admin',
     sessionId,
   });
 
   res.json({ token: accessToken, refreshToken: newRefreshToken });
 });
 
-authRouter.get("/me", authMiddleware, (req: Request, res: Response) => {
+authRouter.get('/me', authMiddleware, (req: Request, res: Response) => {
   res.json({ user: (req as AuthedRequest).user });
 });
 
@@ -268,11 +288,11 @@ authRouter.get("/me", authMiddleware, (req: Request, res: Response) => {
 // Metadata endpoint:
 //   GET  /auth/saml/metadata          → SP metadata XML
 
-const SAML_PROVIDERS = ["okta", "azure"] as const;
+const SAML_PROVIDERS = ['okta', 'azure'] as const;
 type SamlProvider = (typeof SAML_PROVIDERS)[number];
 
 function getSamlConfig(provider: SamlProvider): Record<string, string> | null {
-  if (provider === "okta") {
+  if (provider === 'okta') {
     if (!env.SAML_OKTA_ENTRY_POINT || !env.SAML_OKTA_CERT) return null;
     return { entryPoint: env.SAML_OKTA_ENTRY_POINT, cert: env.SAML_OKTA_CERT };
   }
@@ -281,9 +301,9 @@ function getSamlConfig(provider: SamlProvider): Record<string, string> | null {
 }
 
 // GET /auth/saml/metadata
-authRouter.get("/saml/metadata", (_req: Request, res: Response) => {
-  const entityId = env.SAML_SP_ENTITY_ID ?? "https://tariffshield.io/saml/metadata";
-  const acsUrl   = env.SAML_SP_ACS_URL   ?? "https://tariffshield.io/auth/saml/okta/callback";
+authRouter.get('/saml/metadata', (_req: Request, res: Response) => {
+  const entityId = env.SAML_SP_ENTITY_ID ?? 'https://tariffshield.io/saml/metadata';
+  const acsUrl = env.SAML_SP_ACS_URL ?? 'https://tariffshield.io/auth/saml/okta/callback';
   const xml = `<?xml version="1.0"?>
 <EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" entityID="${entityId}">
   <SPSSODescriptor AuthnRequestsSigned="false" WantAssertionsSigned="true"
@@ -292,25 +312,27 @@ authRouter.get("/saml/metadata", (_req: Request, res: Response) => {
       Location="${acsUrl}" index="1"/>
   </SPSSODescriptor>
 </EntityDescriptor>`;
-  res.set("Content-Type", "application/xml").send(xml);
+  res.set('Content-Type', 'application/xml').send(xml);
 });
 
 // GET /auth/saml/:provider/login — SP-initiated SSO; redirects to IdP
-authRouter.get("/saml/:provider/login", (req: Request, res: Response) => {
+authRouter.get('/saml/:provider/login', (req: Request, res: Response) => {
   const provider = req.params.provider as SamlProvider;
   if (!SAML_PROVIDERS.includes(provider)) {
-    res.status(404).json({ error: "unknown SAML provider" });
+    res.status(404).json({ error: 'unknown SAML provider' });
     return;
   }
   const cfg = getSamlConfig(provider);
   if (!cfg) {
-    res.status(501).json({ error: `SAML SSO for '${provider}' is not configured on this instance` });
+    res
+      .status(501)
+      .json({ error: `SAML SSO for '${provider}' is not configured on this instance` });
     return;
   }
 
-  const entityId = env.SAML_SP_ENTITY_ID ?? "https://tariffshield.io/saml/metadata";
-  const acsUrl   = env.SAML_SP_ACS_URL   ?? `https://tariffshield.io/auth/saml/${provider}/callback`;
-  const relayState = String(req.query.relay ?? "");
+  const entityId = env.SAML_SP_ENTITY_ID ?? 'https://tariffshield.io/saml/metadata';
+  const acsUrl = env.SAML_SP_ACS_URL ?? `https://tariffshield.io/auth/saml/${provider}/callback`;
+  const relayState = String(req.query.relay ?? '');
 
   // Build a minimal SP-initiated AuthnRequest redirect URL.
   // In production, use passport-saml or samlify for signed AuthnRequests.
@@ -325,18 +347,18 @@ authRouter.get("/saml/:provider/login", (req: Request, res: Response) => {
     `<saml:Issuer>${entityId}</saml:Issuer>` +
     `</samlp:AuthnRequest>`;
 
-  const encoded = Buffer.from(authnRequest).toString("base64");
+  const encoded = Buffer.from(authnRequest).toString('base64');
   const params = new URLSearchParams({ SAMLRequest: encoded });
-  if (relayState) params.set("RelayState", relayState);
+  if (relayState) params.set('RelayState', relayState);
 
   res.redirect(`${cfg.entryPoint}?${params.toString()}`);
 });
 
 // POST /auth/saml/:provider/callback — receive and validate SAMLResponse, issue JWT
-authRouter.post("/saml/:provider/callback", async (req: Request, res: Response) => {
+authRouter.post('/saml/:provider/callback', async (req: Request, res: Response) => {
   const provider = req.params.provider as SamlProvider;
   if (!SAML_PROVIDERS.includes(provider)) {
-    res.status(404).json({ error: "unknown SAML provider" });
+    res.status(404).json({ error: 'unknown SAML provider' });
     return;
   }
   const cfg = getSamlConfig(provider);
@@ -347,7 +369,7 @@ authRouter.post("/saml/:provider/callback", async (req: Request, res: Response) 
 
   const samlResponse = req.body?.SAMLResponse as string | undefined;
   if (!samlResponse) {
-    res.status(400).json({ error: "missing SAMLResponse" });
+    res.status(400).json({ error: 'missing SAMLResponse' });
     return;
   }
 
@@ -355,21 +377,23 @@ authRouter.post("/saml/:provider/callback", async (req: Request, res: Response) 
   // Production: replace with passport-saml Strategy.verify() for full signature validation.
   let decoded: string;
   try {
-    decoded = Buffer.from(samlResponse, "base64").toString("utf8");
+    decoded = Buffer.from(samlResponse, 'base64').toString('utf8');
   } catch {
-    res.status(400).json({ error: "malformed SAMLResponse" });
+    res.status(400).json({ error: 'malformed SAMLResponse' });
     return;
   }
 
   // Extract NameID and email from assertion attributes
   const nameIdMatch = decoded.match(/<(?:saml:|)NameID[^>]*>([^<]+)<\/(?:saml:|)NameID>/);
-  const emailMatch  = decoded.match(/Name="(?:email|mail|emailAddress)[^"]*"\s*[^>]*>\s*<(?:saml:|)AttributeValue[^>]*>([^<]+)<\/(?:saml:|)AttributeValue>/i);
+  const emailMatch = decoded.match(
+    /Name="(?:email|mail|emailAddress)[^"]*"\s*[^>]*>\s*<(?:saml:|)AttributeValue[^>]*>([^<]+)<\/(?:saml:|)AttributeValue>/i
+  );
 
   const nameId = nameIdMatch?.[1]?.trim();
-  const email  = emailMatch?.[1]?.trim();
+  const email = emailMatch?.[1]?.trim();
 
   if (!nameId) {
-    res.status(401).json({ error: "SAML assertion missing NameID" });
+    res.status(401).json({ error: 'SAML assertion missing NameID' });
     return;
   }
 
@@ -379,11 +403,11 @@ authRouter.post("/saml/:provider/callback", async (req: Request, res: Response) 
 
   const existing = await pool.query(
     `SELECT id, email, role FROM users WHERE saml_subject_id = $1 AND idp_entity_id = $2`,
-    [nameId, idpEntityId],
+    [nameId, idpEntityId]
   );
 
   let userId: string;
-  let userRole: "surety_admin" = "surety_admin";
+  let userRole = 'surety_admin' as const;
 
   if (existing.rowCount && existing.rowCount > 0) {
     userId = existing.rows[0]!.id;
@@ -396,19 +420,23 @@ authRouter.post("/saml/:provider/callback", async (req: Request, res: Response) 
              idp_entity_id   = EXCLUDED.idp_entity_id,
              idp_provider    = EXCLUDED.idp_provider
        RETURNING id, role`,
-      [userEmail, "__saml__no_password__", nameId, idpEntityId, provider],
+      [userEmail, '__saml__no_password__', nameId, idpEntityId, provider]
     );
     userId = inserted.rows[0]!.id;
     userRole = inserted.rows[0]!.role;
   }
 
-  const sessionId = await createSession(userId, req.ip ?? undefined, req.get("user-agent") ?? undefined);
+  const sessionId = await createSession(
+    userId,
+    req.ip ?? undefined,
+    req.get('user-agent') ?? undefined
+  );
   const token = signToken({ id: userId, email: userEmail, role: userRole, sessionId });
   const relayState = req.body?.RelayState as string | undefined;
 
   // Redirect browser to frontend with token, or return JSON for API clients
-  const accept = req.headers.accept ?? "";
-  if (accept.includes("text/html") && relayState?.startsWith("/")) {
+  const accept = req.headers.accept ?? '';
+  if (accept.includes('text/html') && relayState?.startsWith('/')) {
     res.redirect(`${relayState}?token=${encodeURIComponent(token)}`);
   } else {
     res.json({ token, user: { id: userId, email: userEmail, role: userRole } });

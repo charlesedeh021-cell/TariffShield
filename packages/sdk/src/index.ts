@@ -165,7 +165,7 @@ export class TariffShieldClient {
   ): Promise<InvokeResult<null>> {
     const primarySigner = signers[0];
     if (!primarySigner) {
-      throw new Error("At least one signer is required for setRequiredCollateral");
+      throw new Error('At least one signer is required for setRequiredCollateral');
     }
     const args = [
       addressToScVal(primarySigner.publicKey()),
@@ -182,7 +182,7 @@ export class TariffShieldClient {
     args.push(nativeToScVal(bypassRateLimit ?? false, { type: 'bool' }));
     args.push(nativeToScVal(emergency ?? false, { type: 'bool' }));
 
-    return this.invokeAndSubmitMulti(signers, "set_required_collateral", args, primarySigner);
+    return this.invokeAndSubmitMulti(signers, 'set_required_collateral', args, primarySigner);
   }
 
   async autoTopUp(signer: Keypair, importer: string): Promise<InvokeResult<bigint>> {

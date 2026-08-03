@@ -1,9 +1,15 @@
-import { Router, type Request, type Response } from "express";
-import { z } from "zod";
-import { pool, logAudit } from "../db.js";
-import { authMiddleware, requireRole, privacyReacceptanceGate, tosReacceptanceGate, type AuthedRequest } from "../auth.js";
-import { encryptFieldToJson, decryptFieldFromJson } from "../lib/field-encryption.js";
-import { env } from "../config/env.js";
+import { Router, type Request, type Response } from 'express';
+import { z } from 'zod';
+import { pool, logAudit } from '../db.js';
+import {
+  authMiddleware,
+  requireRole,
+  privacyReacceptanceGate,
+  tosReacceptanceGate,
+  type AuthedRequest,
+} from '../auth.js';
+import { encryptFieldToJson, decryptFieldFromJson } from '../lib/field-encryption.js';
+import { env } from '../config/env.js';
 
 export const kycRouter = Router();
 kycRouter.use(authMiddleware);
@@ -23,7 +29,7 @@ function s3KeyDecrypt(encrypted: string): string {
   try {
     return decryptFieldFromJson(encrypted) ?? encrypted;
   } catch {
-    return "[decryption error]";
+    return '[decryption error]';
   }
 }
 
@@ -32,8 +38,8 @@ function s3KeyDecrypt(encrypted: string): string {
 async function uploadDocumentToS3(
   importerId: string,
   documentType: string,
-  fileBuffer: Buffer,
-  mimeType: string,
+  _fileBuffer: Buffer,
+  _mimeType: string
 ): Promise<string> {
   const timestamp = Date.now();
   const key = `kyc/${importerId}/${documentType}/${timestamp}`;
@@ -54,7 +60,11 @@ function generatePresignedUrl(s3Key: string): string {
 }
 
 const UploadKycSchema = z.object({
-  documentType: z.enum(["articles_of_incorporation", "ein_confirmation", "beneficial_ownership_fincen_102"]),
+  documentType: z.enum([
+    'articles_of_incorporation',
+    'ein_confirmation',
+    'beneficial_ownership_fincen_102',
+  ]),
   // In production, file bytes come from multipart/form-data (multer/busboy).
   // For now, accept a base64-encoded payload for API simplicity.
   fileBase64: z.string().min(1),
@@ -62,30 +72,30 @@ const UploadKycSchema = z.object({
 });
 
 // POST /api/v1/importers/:id/kyc — upload a KYC document (importer only)
-kycRouter.post("/:id/kyc", async (req: Request, res: Response) => {
+kycRouter.post('/:id/kyc', async (req: Request, res: Response) => {
   const user = (req as AuthedRequest).user;
-  if (user.role !== "importer") {
-    res.status(403).json({ error: "only importers can upload KYC documents" });
+  if (user.role !== 'importer') {
+    res.status(403).json({ error: 'only importers can upload KYC documents' });
     return;
   }
 
-  const imp = await pool.query(
-    "SELECT id FROM importers WHERE id = $1 AND user_id = $2",
-    [req.params.id, user.id],
-  );
+  const imp = await pool.query('SELECT id FROM importers WHERE id = $1 AND user_id = $2', [
+    req.params.id,
+    user.id,
+  ]);
   if (!imp.rowCount) {
-    res.status(404).json({ error: "not found" });
+    res.status(404).json({ error: 'not found' });
     return;
   }
   const importerId: string = imp.rows[0]!.id;
 
   const parse = UploadKycSchema.safeParse(req.body);
   if (!parse.success) {
-    res.status(400).json({ error: "invalid input", details: parse.error.issues });
+    res.status(400).json({ error: 'invalid input', details: parse.error.issues });
     return;
   }
   const { documentType, fileBase64, mimeType } = parse.data;
-  const fileBuffer = Buffer.from(fileBase64, "base64");
+  const fileBuffer = Buffer.from(fileBase64, 'base64');
 
   const s3Key = await uploadDocumentToS3(importerId, documentType, fileBuffer, mimeType);
   const encryptedKey = s3KeyEncrypt(s3Key);
@@ -97,27 +107,27 @@ kycRouter.post("/:id/kyc", async (req: Request, res: Response) => {
     `INSERT INTO kyc_documents (importer_id, document_type, s3_key_encrypted, scheduled_deletion_date)
      VALUES ($1, $2, $3, $4)
      RETURNING id, document_type, upload_timestamp, review_status, scheduled_deletion_date`,
-    [importerId, documentType, encryptedKey, scheduledDeletion],
+    [importerId, documentType, encryptedKey, scheduledDeletion]
   );
 
   res.status(201).json({ document: result.rows[0] });
 });
 
 // GET /api/v1/importers/:id/kyc — list KYC documents for an importer
-kycRouter.get("/:id/kyc", async (req: Request, res: Response) => {
+kycRouter.get('/:id/kyc', async (req: Request, res: Response) => {
   const user = (req as AuthedRequest).user;
 
   let importerCheck;
-  if (user.role === "surety_admin") {
-    importerCheck = await pool.query("SELECT id FROM importers WHERE id = $1", [req.params.id]);
+  if (user.role === 'surety_admin') {
+    importerCheck = await pool.query('SELECT id FROM importers WHERE id = $1', [req.params.id]);
   } else {
-    importerCheck = await pool.query(
-      "SELECT id FROM importers WHERE id = $1 AND user_id = $2",
-      [req.params.id, user.id],
-    );
+    importerCheck = await pool.query('SELECT id FROM importers WHERE id = $1 AND user_id = $2', [
+      req.params.id,
+      user.id,
+    ]);
   }
   if (!importerCheck.rowCount) {
-    res.status(404).json({ error: "not found" });
+    res.status(404).json({ error: 'not found' });
     return;
   }
 
@@ -126,13 +136,13 @@ kycRouter.get("/:id/kyc", async (req: Request, res: Response) => {
             scheduled_deletion_date, deleted_at
      FROM kyc_documents WHERE importer_id = $1 AND deleted_at IS NULL
      ORDER BY upload_timestamp DESC`,
-    [req.params.id],
+    [req.params.id]
   );
   res.json({ documents: docs.rows });
 });
 
 const UpdateKycStatusSchema = z.object({
-  kycStatus: z.enum(["pending", "approved", "rejected"]),
+  kycStatus: z.enum(['pending', 'approved', 'rejected']),
 });
 
 // PATCH /api/v1/importers/:id/kyc — directly set an importer's kyc_status
@@ -140,12 +150,12 @@ const UpdateKycStatusSchema = z.object({
 // below, which derives kyc_status from document approvals; PATCH is a
 // direct administrative override for cases handled outside the document
 // workflow (e.g. KYC verified through an external channel).
-kycRouter.patch("/:id/kyc", requireRole("surety_admin"), async (req: Request, res: Response) => {
+kycRouter.patch('/:id/kyc', requireRole('surety_admin'), async (req: Request, res: Response) => {
   const user = (req as AuthedRequest).user;
 
   const parse = UpdateKycStatusSchema.safeParse(req.body);
   if (!parse.success) {
-    res.status(400).json({ error: "invalid input", details: parse.error.issues });
+    res.status(400).json({ error: 'invalid input', details: parse.error.issues });
     return;
   }
 
@@ -153,31 +163,35 @@ kycRouter.patch("/:id/kyc", requireRole("surety_admin"), async (req: Request, re
     `UPDATE importers SET kyc_status = $1
      WHERE id = $2 AND deleted_at IS NULL
      RETURNING id, kyc_status`,
-    [parse.data.kycStatus, req.params.id],
+    [parse.data.kycStatus, req.params.id]
   );
   if (!result.rowCount) {
-    res.status(404).json({ error: "not found" });
+    res.status(404).json({ error: 'not found' });
     return;
   }
 
-  await logAudit(user.id, "kyc_status_update", result.rows[0]!.id, { kycStatus: parse.data.kycStatus });
+  await logAudit(user.id, 'kyc_status_update', result.rows[0]!.id, {
+    kycStatus: parse.data.kycStatus,
+  });
 
   res.json({ importerId: result.rows[0]!.id, kycStatus: result.rows[0]!.kyc_status });
 });
 
 // POST /api/v1/importers/:id/kyc/:docId/review — surety_admin approves/rejects a document
 kycRouter.post(
-  "/:id/kyc/:docId/review",
-  requireRole("surety_admin"),
+  '/:id/kyc/:docId/review',
+  requireRole('surety_admin'),
   async (req: Request, res: Response) => {
     const user = (req as AuthedRequest).user;
 
-    const parse = z.object({
-      decision: z.enum(["approved", "rejected"]),
-      note: z.string().min(1),
-    }).safeParse(req.body);
+    const parse = z
+      .object({
+        decision: z.enum(['approved', 'rejected']),
+        note: z.string().min(1),
+      })
+      .safeParse(req.body);
     if (!parse.success) {
-      res.status(400).json({ error: "decision and note are required" });
+      res.status(400).json({ error: 'decision and note are required' });
       return;
     }
     const { decision, note } = parse.data;
@@ -186,10 +200,10 @@ kycRouter.post(
       `SELECT kd.id, kd.importer_id FROM kyc_documents kd
        JOIN importers i ON i.id = kd.importer_id
        WHERE kd.id = $1 AND kd.importer_id = $2 AND kd.deleted_at IS NULL`,
-      [req.params.docId, req.params.id],
+      [req.params.docId, req.params.id]
     );
     if (!doc.rowCount) {
-      res.status(404).json({ error: "document not found" });
+      res.status(404).json({ error: 'document not found' });
       return;
     }
 
@@ -197,7 +211,7 @@ kycRouter.post(
       `UPDATE kyc_documents
        SET review_status = $1, reviewer_id = $2, reviewer_note = $3, reviewed_at = now()
        WHERE id = $4`,
-      [decision, user.id, note, req.params.docId],
+      [decision, user.id, note, req.params.docId]
     );
 
     // Update importer KYC status when a document is approved/rejected.
@@ -207,36 +221,39 @@ kycRouter.post(
          BOOL_OR(review_status = 'approved') AS has_approved,
          BOOL_OR(review_status = 'rejected') AS has_rejected
        FROM kyc_documents WHERE importer_id = $1 AND deleted_at IS NULL`,
-      [req.params.id],
+      [req.params.id]
     );
     const { has_approved, has_rejected } = statusResult.rows[0] ?? {};
-    const kycStatus = has_rejected ? "rejected" : has_approved ? "approved" : "pending";
-    await pool.query("UPDATE importers SET kyc_status = $1 WHERE id = $2", [kycStatus, req.params.id]);
+    const kycStatus = has_rejected ? 'rejected' : has_approved ? 'approved' : 'pending';
+    await pool.query('UPDATE importers SET kyc_status = $1 WHERE id = $2', [
+      kycStatus,
+      req.params.id,
+    ]);
 
     res.json({ success: true, importerKycStatus: kycStatus });
-  },
+  }
 );
 
 // GET /api/v1/importers/:id/kyc/:docId/download — get a pre-signed S3 URL (surety_admin or owner)
-kycRouter.get("/:id/kyc/:docId/download", async (req: Request, res: Response) => {
+kycRouter.get('/:id/kyc/:docId/download', async (req: Request, res: Response) => {
   const user = (req as AuthedRequest).user;
 
   let query;
-  if (user.role === "surety_admin") {
+  if (user.role === 'surety_admin') {
     query = await pool.query(
-      "SELECT kd.s3_key_encrypted FROM kyc_documents kd WHERE kd.id = $1 AND kd.importer_id = $2 AND kd.deleted_at IS NULL",
-      [req.params.docId, req.params.id],
+      'SELECT kd.s3_key_encrypted FROM kyc_documents kd WHERE kd.id = $1 AND kd.importer_id = $2 AND kd.deleted_at IS NULL',
+      [req.params.docId, req.params.id]
     );
   } else {
     query = await pool.query(
       `SELECT kd.s3_key_encrypted FROM kyc_documents kd
        JOIN importers i ON i.id = kd.importer_id
        WHERE kd.id = $1 AND kd.importer_id = $2 AND i.user_id = $3 AND kd.deleted_at IS NULL`,
-      [req.params.docId, req.params.id, user.id],
+      [req.params.docId, req.params.id, user.id]
     );
   }
   if (!query.rowCount) {
-    res.status(404).json({ error: "not found" });
+    res.status(404).json({ error: 'not found' });
     return;
   }
 
