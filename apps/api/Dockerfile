@@ -3,7 +3,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Copy workspace manifests first for layer caching
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json tsconfig.base.json ./
 COPY apps/api/package.json ./apps/api/
 COPY packages/sdk/package.json ./packages/sdk/
 
