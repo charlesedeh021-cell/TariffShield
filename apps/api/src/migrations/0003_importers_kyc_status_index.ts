@@ -1,4 +1,4 @@
-import { PoolClient } from "pg";
+import { PoolClient } from 'pg';
 
 // #229 — index for the kyc_status column added on importers by 0001.
 //

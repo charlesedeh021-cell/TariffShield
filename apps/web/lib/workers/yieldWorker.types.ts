@@ -20,5 +20,4 @@ export interface YieldProjectionResponse {
 }
 
 export type YieldWorkerMessage =
-  | { ok: true; result: YieldProjectionResponse }
-  | { ok: false; error: string };
+  { ok: true; result: YieldProjectionResponse } | { ok: false; error: string };

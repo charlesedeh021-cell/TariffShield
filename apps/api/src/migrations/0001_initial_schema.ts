@@ -1,4 +1,4 @@
-import { PoolClient } from "pg";
+import { PoolClient } from 'pg';
 
 export async function up(client: PoolClient): Promise<void> {
   await client.query(`
@@ -241,7 +241,9 @@ export async function up(client: PoolClient): Promise<void> {
       signed_document_hash TEXT,
       completed_at TIMESTAMPTZ,
       pdf_s3_key TEXT,
-      last_reminder_sent_at TIMESTAMPTZ
+      last_reminder_sent_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
 
     -- #312: KYC document storage with retention schedule

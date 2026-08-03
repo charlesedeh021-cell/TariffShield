@@ -96,7 +96,7 @@ const poolInterval = setInterval(() => {
     waitingAlertFired = false;
   }
 }, POOL_CHECK_INTERVAL_MS);
-if (typeof poolInterval.unref === "function") {
+if (typeof poolInterval.unref === 'function') {
   poolInterval.unref();
 }
 
@@ -199,13 +199,13 @@ export function getPoolStats(): PoolStats {
 // ── Schema migrations ─────────────────────────────────────────────────────────
 
 export async function migrate(): Promise<void> {
-  const { runMigrations } = await import("./migrations/runner.js");
-  await runMigrations("up");
+  const { runMigrations } = await import('./migrations/runner.js');
+  await runMigrations('up');
 }
 
 export async function rollback(): Promise<void> {
-  const { runMigrations } = await import("./migrations/runner.js");
-  await runMigrations("rollback");
+  const { runMigrations } = await import('./migrations/runner.js');
+  await runMigrations('rollback');
   await timedQuery(
     `
     CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -871,7 +871,7 @@ export async function rollback(): Promise<void> {
     undefined,
     'migrate_schema'
   );
-  logger.info("schema ready");
+  logger.info('schema ready');
 }
 
 // ── importer_metrics_mv (#251) ────────────────────────────────────────────────
@@ -952,9 +952,9 @@ export async function refreshImporterMetrics(): Promise<void> {
  */
 export async function refreshImporterMetricsView(): Promise<void> {
   await timedQuery(
-    "REFRESH MATERIALIZED VIEW CONCURRENTLY importer_metrics",
+    'REFRESH MATERIALIZED VIEW CONCURRENTLY importer_metrics',
     undefined,
-    "refresh_importer_metrics",
+    'refresh_importer_metrics'
   );
 }
 
@@ -990,9 +990,7 @@ export interface ImporterReview {
  * view's LEFT JOIN produces a single row with all document_* fields NULL,
  * which this function filters out via the document_id IS NOT NULL check.
  */
-export async function getImporterReview(
-  importerId: string
-): Promise<ImporterReview | null> {
+export async function getImporterReview(importerId: string): Promise<ImporterReview | null> {
   const result = await timedQuery<{
     importer_id: string;
     legal_name: string;
@@ -1245,13 +1243,13 @@ export async function logAudit(
   actorUserId: string | null,
   action: string,
   targetId: string | null,
-  payload: Record<string, unknown> | null,
+  payload: Record<string, unknown> | null
 ): Promise<void> {
   await timedQuery(
     `INSERT INTO audit_log (actor_user_id, action, target_id, payload)
      VALUES ($1, $2, $3, $4)`,
     [actorUserId, action, targetId, payload ? JSON.stringify(payload) : null],
-    "insert_audit_log",
+    'insert_audit_log'
   );
 }
 
@@ -1262,12 +1260,16 @@ export async function logAudit(
 // existing rows — but routes that produce the underlying events, like
 // routes/importers.ts, do), mirroring how logAudit above is shared the same
 // way for audit_log.
-export async function createNotification(userId: string, kind: string, message: string): Promise<void> {
+export async function createNotification(
+  userId: string,
+  kind: string,
+  message: string
+): Promise<void> {
   await timedQuery(
     `INSERT INTO notifications (user_id, kind, message)
      VALUES ($1, $2, $3)`,
     [userId, kind, message],
-    "insert_notification",
+    'insert_notification'
   );
 }
 
@@ -1278,25 +1280,25 @@ export async function createRefreshToken(
   tokenHash: string,
   expiresAt: Date,
   userAgent?: string,
-  ipAddress?: string,
+  ipAddress?: string
 ): Promise<string> {
   const result = await timedQuery<{ id: string }>(
     `INSERT INTO refresh_tokens (user_id, token_hash, expires_at, user_agent, ip_address)
      VALUES ($1, $2, $3, $4, $5) RETURNING id`,
     [userId, tokenHash, expiresAt, userAgent ?? null, ipAddress ?? null],
-    "insert_refresh_token",
+    'insert_refresh_token'
   );
   return result.rows[0]!.id;
 }
 
 export async function validateRefreshToken(
-  tokenHash: string,
+  tokenHash: string
 ): Promise<{ id: string; userId: string; expiresAt: Date } | null> {
   const result = await timedQuery<{ id: string; user_id: string; expires_at: Date }>(
     `SELECT id, user_id, expires_at FROM refresh_tokens
      WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now()`,
     [tokenHash],
-    "validate_refresh_token",
+    'validate_refresh_token'
   );
   const row = result.rows[0];
   if (!row) return null;
@@ -1306,15 +1308,15 @@ export async function validateRefreshToken(
 export async function rotateRefreshToken(
   oldId: string,
   newTokenHash: string,
-  newExpiresAt: Date,
+  newExpiresAt: Date
 ): Promise<string> {
   const result = await timedQuery<{ user_id: string }>(
     `UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1 RETURNING user_id`,
     [oldId],
-    "revoke_refresh_token",
+    'revoke_refresh_token'
   );
   const userId = result.rows[0]?.user_id;
-  if (!userId) throw new Error("refresh token not found");
+  if (!userId) throw new Error('refresh token not found');
 
   return createRefreshToken(userId, newTokenHash, newExpiresAt);
 }
@@ -1324,7 +1326,7 @@ export async function revokeRefreshToken(tokenHash: string): Promise<boolean> {
     `UPDATE refresh_tokens SET revoked_at = now()
      WHERE token_hash = $1 AND revoked_at IS NULL`,
     [tokenHash],
-    "revoke_refresh_token",
+    'revoke_refresh_token'
   );
   return (result.rowCount ?? 0) > 0;
 }

@@ -1,10 +1,10 @@
-import { Keypair, rpc } from "@stellar/stellar-sdk";
-import { TariffShieldClient } from "@tariffshield/sdk";
-import client from "prom-client";
-import { trace, SpanStatusCode } from "@opentelemetry/api";
-import { env } from "./config/env.js";
-import { createRpcServer } from "./lib/soroban/rpcClient.js";
-import { logger } from "./lib/logger.js";
+import { Keypair, rpc } from '@stellar/stellar-sdk';
+import { TariffShieldClient } from '@tariffshield/sdk';
+import client from 'prom-client';
+import { trace, SpanStatusCode } from '@opentelemetry/api';
+import { env } from './config/env.js';
+import { createRpcServer } from './lib/soroban/rpcClient.js';
+import { logger } from './lib/logger.js';
 
 const tracer = trace.getTracer('tariffshield-stellar');
 
@@ -115,18 +115,24 @@ export const contractClient = new Proxy(baseClient, {
             const diff = process.hrtime(start);
             const duration = diff[0] + diff[1] / 1e9;
             const durationMs = Math.round(duration * 1000);
-            sorobanRpcCallsTotal.inc({ method: methodName, success: "true" });
+            sorobanRpcCallsTotal.inc({ method: methodName, success: 'true' });
             sorobanRpcDurationSeconds.observe({ method: methodName }, duration);
-            logger.info({ rpcMethod: methodName, durationMs, success: true }, "Soroban RPC call succeeded");
+            logger.info(
+              { rpcMethod: methodName, durationMs, success: true },
+              'Soroban RPC call succeeded'
+            );
             span.setStatus({ code: SpanStatusCode.OK });
             return result;
           } catch (err) {
             const diff = process.hrtime(start);
             const duration = diff[0] + diff[1] / 1e9;
             const durationMs = Math.round(duration * 1000);
-            sorobanRpcCallsTotal.inc({ method: methodName, success: "false" });
+            sorobanRpcCallsTotal.inc({ method: methodName, success: 'false' });
             sorobanRpcDurationSeconds.observe({ method: methodName }, duration);
-            logger.error({ rpcMethod: methodName, durationMs, success: false, err }, "Soroban RPC call failed");
+            logger.error(
+              { rpcMethod: methodName, durationMs, success: false, err },
+              'Soroban RPC call failed'
+            );
             span.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
             throw err;
           } finally {
@@ -155,18 +161,24 @@ export async function getCurrentLedgerSequence(): Promise<number> {
       const diff = process.hrtime(start);
       const duration = diff[0] + diff[1] / 1e9;
       const durationMs = Math.round(duration * 1000);
-      sorobanRpcCallsTotal.inc({ method: methodName, success: "true" });
+      sorobanRpcCallsTotal.inc({ method: methodName, success: 'true' });
       sorobanRpcDurationSeconds.observe({ method: methodName }, duration);
-      logger.info({ rpcMethod: methodName, durationMs, success: true }, "Soroban RPC call succeeded");
+      logger.info(
+        { rpcMethod: methodName, durationMs, success: true },
+        'Soroban RPC call succeeded'
+      );
       span.setStatus({ code: SpanStatusCode.OK });
       return latest.sequence;
     } catch (err) {
       const diff = process.hrtime(start);
       const duration = diff[0] + diff[1] / 1e9;
       const durationMs = Math.round(duration * 1000);
-      sorobanRpcCallsTotal.inc({ method: methodName, success: "false" });
+      sorobanRpcCallsTotal.inc({ method: methodName, success: 'false' });
       sorobanRpcDurationSeconds.observe({ method: methodName }, duration);
-      logger.error({ rpcMethod: methodName, durationMs, success: false, err }, "Soroban RPC call failed");
+      logger.error(
+        { rpcMethod: methodName, durationMs, success: false, err },
+        'Soroban RPC call failed'
+      );
       span.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
       throw err;
     } finally {

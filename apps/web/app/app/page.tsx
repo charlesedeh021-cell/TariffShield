@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 // #256: this page stays a Client Component rather than converting to an
 // async Server Component. Authentication here is a pure client-side
@@ -16,16 +16,23 @@
 // Suspense boundary Next.js wraps this page in automatically) streams an
 // immediate skeleton as the initial HTML response, improving perceived
 // TTI without requiring server-side auth.
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
-import { Nav } from "@/components/Nav";
-import { HealthScore } from "@/components/HealthScore";
-import { DepositWizard } from "@/components/DepositWizard";
-import { BondTimeline } from "@/components/BondTimeline";
-import { api, ApiError, type Importer, type ImporterDetail, type ContractEvent, stroopsToXlm } from "@/lib/api";
-import { getUser, isAuthenticated } from "@/lib/auth";
-import { useYieldProjection } from "@/lib/workers/useYieldProjection";
-import * as Sentry from "@sentry/nextjs";
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
+import { Nav } from '@/components/Nav';
+import { HealthScore } from '@/components/HealthScore';
+import { DepositWizard } from '@/components/DepositWizard';
+import { BondTimeline } from '@/components/BondTimeline';
+import {
+  api,
+  ApiError,
+  type Importer,
+  type ImporterDetail,
+  type ContractEvent,
+  stroopsToXlm,
+} from '@/lib/api';
+import { getUser, isAuthenticated } from '@/lib/auth';
+import { useYieldProjection } from '@/lib/workers/useYieldProjection';
+import * as Sentry from '@sentry/nextjs';
 
 function ImporterDashboard() {
   const router = useRouter();
@@ -55,30 +62,64 @@ function ImporterDashboard() {
     }
   }, []);
 
-  const action = useCallback(async (name: string, fn: () => Promise<unknown>) => {
-    setBusy(name);
-    setError(null);
-    try {
-      await fn();
-      await refresh();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e));
-    } finally {
-      setBusy(null);
-    }
-  }, [refresh]);
+  const action = useCallback(
+    async (name: string, fn: () => Promise<unknown>) => {
+      setBusy(name);
+      setError(null);
+      try {
+        await fn();
+        await refresh();
+      } catch (e) {
+        setError(e instanceof ApiError ? e.message : String(e));
+      } finally {
+        setBusy(null);
+      }
+    },
+    [refresh]
+  );
 
   const handleTopUp = useCallback(() => {
     if (!importer) return;
-    return action("topup", () => api.autoTopUp(importer.id));
+    return action('topup', () => api.autoTopUp(importer.id));
   }, [action, importer]);
 
   useEffect(() => {
-    if (!isAuthenticated()) { router.replace("/login"); return; }
+    if (!isAuthenticated()) {
+      router.replace('/login');
+      return;
+    }
     const user = getUser();
-    if (user?.role !== "importer") { router.replace("/surety"); return; }
+    if (user?.role !== 'importer') {
+      router.replace('/surety');
+      return;
+    }
     refresh();
   }, [router, refresh]);
+
+  // Derived values recomputed only when the on-chain account snapshot changes,
+  // not on every render triggered by unrelated state (busy, error, etc.).
+  // Hooks must run unconditionally, so this runs before the `!importer`/
+  // `!detail` early returns below and guards its own computation instead.
+  const { required, collateral, reserve, shortfall, excess, utilization } = useMemo(() => {
+    const oncSnapshot = detail?.onChainAccount;
+    if (!oncSnapshot) {
+      return {
+        required: 0n,
+        collateral: 0n,
+        reserve: 0n,
+        shortfall: 0n,
+        excess: 0n,
+        utilization: 0,
+      };
+    }
+    const required = BigInt(oncSnapshot.requiredCollateral);
+    const collateral = BigInt(oncSnapshot.collateralBalance);
+    const reserve = BigInt(oncSnapshot.reserveBalance);
+    const shortfall = required > collateral ? required - collateral : 0n;
+    const excess = collateral > required ? collateral - required : 0n;
+    const utilization = required === 0n ? 0 : Number((collateral * 100n) / required);
+    return { required, collateral, reserve, shortfall, excess, utilization };
+  }, [detail?.onChainAccount]);
 
   if (!importer) {
     return (
@@ -90,22 +131,17 @@ function ImporterDashboard() {
   }
 
   if (!detail) {
-    return (<><Nav /><main className="max-w-4xl mx-auto px-6 py-10"><p className="text-muted">Loading…</p></main></>);
+    return (
+      <>
+        <Nav />
+        <main className="max-w-4xl mx-auto px-6 py-10">
+          <p className="text-muted">Loading…</p>
+        </main>
+      </>
+    );
   }
 
   const onc = detail.onChainAccount;
-
-  // Derived values recomputed only when the on-chain account snapshot changes,
-  // not on every render triggered by unrelated state (busy, error, etc.).
-  const { required, collateral, reserve, shortfall, excess, utilization } = useMemo(() => {
-    const required = BigInt(onc.requiredCollateral);
-    const collateral = BigInt(onc.collateralBalance);
-    const reserve = BigInt(onc.reserveBalance);
-    const shortfall = required > collateral ? required - collateral : 0n;
-    const excess = collateral > required ? collateral - required : 0n;
-    const utilization = required === 0n ? 0 : Number((collateral * 100n) / required);
-    return { required, collateral, reserve, shortfall, excess, utilization };
-  }, [onc.requiredCollateral, onc.collateralBalance, onc.reserveBalance]);
 
   return (
     <>
@@ -117,14 +153,22 @@ function ImporterDashboard() {
             <h1 className="text-2xl font-semibold tracking-tight">{importer.legalName}</h1>
             <p className="mt-1 text-sm text-muted">
               Bond ID <span className="font-mono">{importer.bondId}</span>
-              {importer.ein ? <> · EIN <span className="font-mono">{importer.ein}</span></> : null}
+              {importer.ein ? (
+                <>
+                  {' '}
+                  · EIN <span className="font-mono">{importer.ein}</span>
+                </>
+              ) : null}
             </p>
             <p className="mt-1 text-xs text-muted font-mono break-all">{importer.stellarAddress}</p>
           </div>
           {detail.importer.registeredOnChainTx ? (
-            <a className="text-xs text-accent hover:underline font-mono"
-               href={`https://stellar.expert/explorer/testnet/tx/${detail.importer.registeredOnChainTx}`}
-               target="_blank" rel="noopener noreferrer">
+            <a
+              className="text-xs text-accent hover:underline font-mono"
+              href={`https://stellar.expert/explorer/testnet/tx/${detail.importer.registeredOnChainTx}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               registration tx ↗
             </a>
           ) : null}
@@ -132,7 +176,8 @@ function ImporterDashboard() {
 
         {onc.isClawbacked ? (
           <div className="mt-6 rounded-lg border border-danger bg-danger/10 px-4 py-3 text-sm text-danger">
-            <strong>Account frozen by surety.</strong> All collateral + reserve has been clawed back. No further deposits or withdrawals allowed.
+            <strong>Account frozen by surety.</strong> All collateral + reserve has been clawed
+            back. No further deposits or withdrawals allowed.
           </div>
         ) : null}
 
@@ -154,18 +199,38 @@ function ImporterDashboard() {
 
         {!onc.isClawbacked && (
           <div className="mt-6 grid gap-4 sm:grid-cols-3">
-            <ActionCard title="Update tariff exposure"
-                        description="Re-run required collateral from annual duty estimate. Demo computes required = annual_duty × 10% × 50%."
-                        action={<TariffForm importerId={importer.id} onDone={refresh} setError={setError} />}
-                        busy={busy === "tariff"} />
-            <ActionCard title="Deposit collateral"
-                        description="Send XLM into the bond escrow bucket. 4-step wizard guides you through the process."
-                        action={<DepositWizard importerId={importer.id} bucket="collateral" onDone={refresh} setError={setError} />}
-                        busy={busy === "deposit-collateral"} />
-            <ActionCard title="Deposit reserve"
-                        description="Top up the auto-top-up pool for tariff spike events. 4-step wizard guides you through the process."
-                        action={<DepositWizard importerId={importer.id} bucket="reserve" onDone={refresh} setError={setError} />}
-                        busy={busy === "deposit-reserve"} />
+            <ActionCard
+              title="Update tariff exposure"
+              description="Re-run required collateral from annual duty estimate. Demo computes required = annual_duty × 10% × 50%."
+              action={<TariffForm importerId={importer.id} onDone={refresh} setError={setError} />}
+              busy={busy === 'tariff'}
+            />
+            <ActionCard
+              title="Deposit collateral"
+              description="Send XLM into the bond escrow bucket. 4-step wizard guides you through the process."
+              action={
+                <DepositWizard
+                  importerId={importer.id}
+                  bucket="collateral"
+                  onDone={refresh}
+                  setError={setError}
+                />
+              }
+              busy={busy === 'deposit-collateral'}
+            />
+            <ActionCard
+              title="Deposit reserve"
+              description="Top up the auto-top-up pool for tariff spike events. 4-step wizard guides you through the process."
+              action={
+                <DepositWizard
+                  importerId={importer.id}
+                  bucket="reserve"
+                  onDone={refresh}
+                  setError={setError}
+                />
+              }
+              busy={busy === 'deposit-reserve'}
+            />
           </div>
         )}
 
@@ -176,23 +241,45 @@ function ImporterDashboard() {
               disabled={busy !== null || shortfall === 0n}
               className="rounded-md bg-accent px-4 py-3 text-accent-foreground hover:opacity-90 disabled:opacity-40 text-sm font-medium"
             >
-              {busy === "topup" ? "Calling auto_top_up on-chain…" :
-                shortfall === 0n ? "auto_top_up (no shortfall)" :
-                `auto_top_up — move ${stroopsToXlm(shortfall.toString())} XLM from reserve`}
+              {busy === 'topup'
+                ? 'Calling auto_top_up on-chain…'
+                : shortfall === 0n
+                  ? 'auto_top_up (no shortfall)'
+                  : `auto_top_up — move ${stroopsToXlm(shortfall.toString())} XLM from reserve`}
             </button>
             {excess > 0n ? (
-              <WithdrawCard importerId={importer.id} maxStroops={excess.toString()} onDone={refresh} setError={setError} />
-            ) : <div className="rounded-md border border-border bg-card px-4 py-3 text-sm text-muted">No excess to withdraw.</div>}
+              <WithdrawCard
+                importerId={importer.id}
+                maxStroops={excess.toString()}
+                onDone={refresh}
+                setError={setError}
+              />
+            ) : (
+              <div className="rounded-md border border-border bg-card px-4 py-3 text-sm text-muted">
+                No excess to withdraw.
+              </div>
+            )}
           </div>
         )}
 
-        {error ? <p className="mt-4 rounded border border-danger bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p> : null}
+        {error ? (
+          <p className="mt-4 rounded border border-danger bg-danger/10 px-3 py-2 text-sm text-danger">
+            {error}
+          </p>
+        ) : null}
 
         <BondTimeline events={events} />
 
         <div className="mt-10">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">On-chain event log</h2>
-          <EventLog key={importer.id + "-" + refreshCount} importerId={importer.id} events={events} setEvents={setEvents} />
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
+            On-chain event log
+          </h2>
+          <EventLog
+            key={importer.id + '-' + refreshCount}
+            importerId={importer.id}
+            events={events}
+            setEvents={setEvents}
+          />
         </div>
       </main>
     </>
@@ -200,7 +287,7 @@ function ImporterDashboard() {
 }
 
 function oracleNote() {
-  return "Set by platform admin acting as tariff oracle";
+  return 'Set by platform admin acting as tariff oracle';
 }
 
 /**
@@ -208,8 +295,19 @@ function oracleNote() {
  * of the parent dashboard doesn't re-render every tile unless its own
  * label/value/hint/accent actually changed.
  */
-const Stat = memo(function Stat({ label, value, hint, accent }: { label: string; value: string; hint?: string; accent?: "success" | "danger" }) {
-  const color = accent === "success" ? "text-success" : accent === "danger" ? "text-danger" : "text-foreground";
+const Stat = memo(function Stat({
+  label,
+  value,
+  hint,
+  accent,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  accent?: 'success' | 'danger';
+}) {
+  const color =
+    accent === 'success' ? 'text-success' : accent === 'danger' ? 'text-danger' : 'text-foreground';
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
@@ -231,7 +329,7 @@ const BalanceSummary = memo(function BalanceSummary({
   excess,
   utilization,
 }: {
-  onChainAccount: ImporterDetail["onChainAccount"];
+  onChainAccount: ImporterDetail['onChainAccount'];
   shortfall: bigint;
   excess: bigint;
   utilization: number;
@@ -245,16 +343,31 @@ const BalanceSummary = memo(function BalanceSummary({
       shortfall: stroopsToXlm(shortfall.toString()),
       excess: stroopsToXlm(excess.toString()),
     }),
-    [onChainAccount.requiredCollateral, onChainAccount.collateralBalance, onChainAccount.reserveBalance, onChainAccount.yieldAccrued, shortfall, excess],
+    [
+      onChainAccount.requiredCollateral,
+      onChainAccount.collateralBalance,
+      onChainAccount.reserveBalance,
+      onChainAccount.yieldAccrued,
+      shortfall,
+      excess,
+    ]
   );
 
   return (
     <>
       <div className="mt-6 grid gap-4 sm:grid-cols-4">
         <Stat label="Required collateral" value={`${formatted.required} XLM`} hint={oracleNote()} />
-        <Stat label="Posted collateral" value={`${formatted.collateral} XLM`} accent={shortfall > 0n ? "danger" : "success"} />
+        <Stat
+          label="Posted collateral"
+          value={`${formatted.collateral} XLM`}
+          accent={shortfall > 0n ? 'danger' : 'success'}
+        />
         <Stat label="Reserve (auto-top-up pool)" value={`${formatted.reserve} XLM`} />
-        <Stat label="Yield accrued (sim BENJI)" value={`${formatted.yieldAccrued} XLM`} accent="success" />
+        <Stat
+          label="Yield accrued (sim BENJI)"
+          value={`${formatted.yieldAccrued} XLM`}
+          accent="success"
+        />
       </div>
 
       <div className="mt-4 rounded-lg border border-border bg-card p-4">
@@ -263,12 +376,15 @@ const BalanceSummary = memo(function BalanceSummary({
           <span className="font-mono">{utilization}%</span>
         </div>
         <div className="h-2 bg-border rounded overflow-hidden">
-          <div className={`h-full ${shortfall > 0n ? "bg-danger" : "bg-success"}`}
-               style={{ width: `${Math.min(utilization, 100)}%` }} />
+          <div
+            className={`h-full ${shortfall > 0n ? 'bg-danger' : 'bg-success'}`}
+            style={{ width: `${Math.min(utilization, 100)}%` }}
+          />
         </div>
         {shortfall > 0n ? (
           <p className="mt-2 text-xs text-danger">
-            Shortfall <span className="font-mono">{formatted.shortfall} XLM</span> — auto-top-up will draw from reserve.
+            Shortfall <span className="font-mono">{formatted.shortfall} XLM</span> — auto-top-up
+            will draw from reserve.
           </p>
         ) : excess > 0n ? (
           <p className="mt-2 text-xs text-success">
@@ -288,7 +404,7 @@ const BalanceSummary = memo(function BalanceSummary({
  */
 function YieldProjectionPanel({ currentBalanceStroops }: { currentBalanceStroops: string }) {
   const [months, setMonths] = useState(24);
-  const [monthlyTopUpXlm, setMonthlyTopUpXlm] = useState("0");
+  const [monthlyTopUpXlm, setMonthlyTopUpXlm] = useState('0');
   const [annualYieldBps, setAnnualYieldBps] = useState(500); // 5%
   const { result, error, loading, project } = useYieldProjection();
 
@@ -301,26 +417,46 @@ function YieldProjectionPanel({ currentBalanceStroops }: { currentBalanceStroops
   return (
     <div className="mt-4 rounded-lg border border-border bg-card p-4">
       <h3 className="text-sm font-semibold">Yield projection (sim BENJI)</h3>
-      <p className="mt-1 text-xs text-muted">Computed off the main thread — typing here never blocks the UI.</p>
+      <p className="mt-1 text-xs text-muted">
+        Computed off the main thread — typing here never blocks the UI.
+      </p>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-3">
         <label className="block">
           <span className="block text-xs text-muted">Months</span>
-          <input type="number" min={1} max={600} value={months}
+          <input
+            type="number"
+            min={1}
+            max={600}
+            value={months}
             onChange={(e) => setMonths(Math.max(1, Math.min(600, Number(e.target.value) || 1)))}
-            className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-accent focus:outline-none" />
+            className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+          />
         </label>
         <label className="block">
           <span className="block text-xs text-muted">Monthly top-up (XLM)</span>
-          <input type="number" min={0} step="0.1" value={monthlyTopUpXlm}
+          <input
+            type="number"
+            min={0}
+            step="0.1"
+            value={monthlyTopUpXlm}
             onChange={(e) => setMonthlyTopUpXlm(e.target.value)}
-            className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-accent focus:outline-none" />
+            className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+          />
         </label>
         <label className="block">
           <span className="block text-xs text-muted">Simulated annual yield (bps)</span>
-          <input type="number" min={0} max={10000} step={10} value={annualYieldBps}
-            onChange={(e) => setAnnualYieldBps(Math.max(0, Math.min(10000, Number(e.target.value) || 0)))}
-            className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-accent focus:outline-none" />
+          <input
+            type="number"
+            min={0}
+            max={10000}
+            step={10}
+            value={annualYieldBps}
+            onChange={(e) =>
+              setAnnualYieldBps(Math.max(0, Math.min(10000, Number(e.target.value) || 0)))
+            }
+            className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+          />
         </label>
       </div>
 
@@ -329,10 +465,13 @@ function YieldProjectionPanel({ currentBalanceStroops }: { currentBalanceStroops
           <p className="text-sm text-danger">{error}</p>
         ) : result ? (
           <p className="text-sm">
-            Projected balance after <span className="font-mono">{result.months}</span> months:{" "}
-            <span className="font-mono font-semibold">{stroopsToXlm(result.projectedBalanceStroops)} XLM</span>{" "}
+            Projected balance after <span className="font-mono">{result.months}</span> months:{' '}
+            <span className="font-mono font-semibold">
+              {stroopsToXlm(result.projectedBalanceStroops)} XLM
+            </span>{' '}
             <span className="text-xs text-muted">
-              ({Number(result.totalYieldStroops) >= 0 ? "+" : ""}{stroopsToXlm(result.totalYieldStroops)} XLM yield)
+              ({Number(result.totalYieldStroops) >= 0 ? '+' : ''}
+              {stroopsToXlm(result.totalYieldStroops)} XLM yield)
             </span>
           </p>
         ) : loading ? (
@@ -395,7 +534,7 @@ function EventLog({
           if (hasMore && !loading) loadNextPage();
         }
       },
-      { rootMargin: "200px" },
+      { rootMargin: '200px' }
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
@@ -443,8 +582,8 @@ function EventLog({
  */
 const EventLogRow = memo(function EventLogRow({ event }: { event: ContractEvent }) {
   const amountLabel = useMemo(
-    () => (event.amount ? `${stroopsToXlm(event.amount)} XLM` : "—"),
-    [event.amount],
+    () => (event.amount ? `${stroopsToXlm(event.amount)} XLM` : '—'),
+    [event.amount]
   );
   return (
     <li className="px-4 py-3 flex items-center justify-between gap-4">
@@ -454,7 +593,12 @@ const EventLogRow = memo(function EventLogRow({ event }: { event: ContractEvent 
       </div>
       <span className="text-sm font-mono">{amountLabel}</span>
       {event.txUrl ? (
-        <a href={event.txUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-accent hover:underline font-mono">
+        <a
+          href={event.txUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-accent hover:underline font-mono"
+        >
           {event.txHash.slice(0, 8)}…
         </a>
       ) : null}
@@ -462,7 +606,17 @@ const EventLogRow = memo(function EventLogRow({ event }: { event: ContractEvent 
   );
 });
 
-function ActionCard({ title, description, action, busy }: { title: string; description: string; action: React.ReactNode; busy: boolean }) {
+function ActionCard({
+  title,
+  description,
+  action,
+  busy,
+}: {
+  title: string;
+  description: string;
+  action: React.ReactNode;
+  busy: boolean;
+}) {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <h3 className="text-sm font-semibold">{title}</h3>
@@ -473,58 +627,109 @@ function ActionCard({ title, description, action, busy }: { title: string; descr
   );
 }
 
-function TariffForm({ importerId, onDone, setError }: { importerId: string; onDone: () => Promise<void>; setError: (e: string | null) => void }) {
-  const [duty, setDuty] = useState("5000000");
+function TariffForm({
+  importerId,
+  onDone,
+  setError,
+}: {
+  importerId: string;
+  onDone: () => Promise<void>;
+  setError: (e: string | null) => void;
+}) {
+  const [duty, setDuty] = useState('5000000');
   const [busy, setBusy] = useState(false);
   async function go() {
     setBusy(true);
     setError(null);
     try {
-      await api.uploadTariffCsv(importerId, { annualDutyTotal: Number(duty), filename: "manual-entry.csv" });
+      await api.uploadTariffCsv(importerId, {
+        annualDutyTotal: Number(duty),
+        filename: 'manual-entry.csv',
+      });
       await onDone();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e));
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   }
   return (
     <div className="flex gap-2">
-      <input type="number" min={100} value={duty} onChange={(e) => setDuty(e.target.value)}
-        className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-accent focus:outline-none" />
-      <button onClick={go} disabled={busy}
-        className="rounded-md border border-accent text-accent px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground disabled:opacity-50">
-        {busy ? "…" : "Apply"}
+      <input
+        type="number"
+        min={100}
+        value={duty}
+        onChange={(e) => setDuty(e.target.value)}
+        className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+      />
+      <button
+        onClick={go}
+        disabled={busy}
+        className="rounded-md border border-accent text-accent px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+      >
+        {busy ? '…' : 'Apply'}
       </button>
     </div>
   );
 }
 
-function WithdrawCard({ importerId, maxStroops, onDone, setError }: { importerId: string; maxStroops: string; onDone: () => Promise<void>; setError: (e: string | null) => void }) {
+function WithdrawCard({
+  importerId,
+  maxStroops,
+  onDone,
+  setError,
+}: {
+  importerId: string;
+  maxStroops: string;
+  onDone: () => Promise<void>;
+  setError: (e: string | null) => void;
+}) {
   const [xlm, setXlm] = useState(stroopsToXlm(maxStroops));
   const [busy, setBusy] = useState(false);
   async function go() {
     setBusy(true);
     setError(null);
     try {
-      await api.withdraw(importerId, { amountStroops: (BigInt(Math.round(Number(xlm) * 1e7))).toString() });
+      await api.withdraw(importerId, {
+        amountStroops: BigInt(Math.round(Number(xlm) * 1e7)).toString(),
+      });
       await onDone();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e));
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   }
   return (
     <div className="rounded-md border border-border bg-card px-3 py-2 flex items-center gap-2">
-      <input type="number" step="0.01" value={xlm} onChange={(e) => setXlm(e.target.value)}
-        className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-accent focus:outline-none" />
-      <button onClick={go} disabled={busy}
-        className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-card disabled:opacity-50">
-        {busy ? "…" : "Withdraw excess"}
+      <input
+        type="number"
+        step="0.01"
+        value={xlm}
+        onChange={(e) => setXlm(e.target.value)}
+        className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+      />
+      <button
+        onClick={go}
+        disabled={busy}
+        className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-card disabled:opacity-50"
+      >
+        {busy ? '…' : 'Withdraw excess'}
       </button>
     </div>
   );
 }
 
-function RegisterImporter({ onCreated, setError, error }: { onCreated: () => Promise<void>; setError: (e: string | null) => void; error: string | null }) {
-  const [form, setForm] = useState({ legalName: "", ein: "", annualDutyEstimate: "5000000" });
+function RegisterImporter({
+  onCreated,
+  setError,
+  error,
+}: {
+  onCreated: () => Promise<void>;
+  setError: (e: string | null) => void;
+  error: string | null;
+}) {
+  const [form, setForm] = useState({ legalName: '', ein: '', annualDutyEstimate: '5000000' });
   const [busy, setBusy] = useState(false);
   async function go(e: React.FormEvent) {
     e.preventDefault();
@@ -542,32 +747,80 @@ function RegisterImporter({ onCreated, setError, error }: { onCreated: () => Pro
       await onCreated();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e));
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   }
   return (
     <main className="max-w-md mx-auto px-6 py-10">
       <h1 className="text-2xl font-semibold tracking-tight">Register your importer entity</h1>
-      <p className="mt-1 text-sm text-muted">Funds a Stellar testnet account + registers your bond on-chain. ~5 sec.</p>
+      <p className="mt-1 text-sm text-muted">
+        Funds a Stellar testnet account + registers your bond on-chain. ~5 sec.
+      </p>
       <form onSubmit={go} className="mt-8 space-y-4">
-        <Field label="Legal name" value={form.legalName} onChange={(v) => setForm({ ...form, legalName: v })} placeholder="Wayfair Imports Inc" required />
-        <Field label="EIN (optional)" value={form.ein} onChange={(v) => setForm({ ...form, ein: v })} placeholder="12-3456789" />
-        <Field label="Annual customs duty estimate (USD)" type="number" value={form.annualDutyEstimate} onChange={(v) => setForm({ ...form, annualDutyEstimate: v })} required />
-        {error ? <p className="rounded border border-danger bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p> : null}
-        <button type="submit" disabled={busy}
-          className="rounded-md bg-accent px-4 py-2.5 text-accent-foreground hover:opacity-90 disabled:opacity-50 text-sm font-medium">
-          {busy ? "Registering on Stellar testnet…" : "Register importer"}
+        <Field
+          label="Legal name"
+          value={form.legalName}
+          onChange={(v) => setForm({ ...form, legalName: v })}
+          placeholder="Wayfair Imports Inc"
+          required
+        />
+        <Field
+          label="EIN (optional)"
+          value={form.ein}
+          onChange={(v) => setForm({ ...form, ein: v })}
+          placeholder="12-3456789"
+        />
+        <Field
+          label="Annual customs duty estimate (USD)"
+          type="number"
+          value={form.annualDutyEstimate}
+          onChange={(v) => setForm({ ...form, annualDutyEstimate: v })}
+          required
+        />
+        {error ? (
+          <p className="rounded border border-danger bg-danger/10 px-3 py-2 text-sm text-danger">
+            {error}
+          </p>
+        ) : null}
+        <button
+          type="submit"
+          disabled={busy}
+          className="rounded-md bg-accent px-4 py-2.5 text-accent-foreground hover:opacity-90 disabled:opacity-50 text-sm font-medium"
+        >
+          {busy ? 'Registering on Stellar testnet…' : 'Register importer'}
         </button>
       </form>
     </main>
   );
 }
 
-function Field({ label, type = "text", value, onChange, placeholder, required }: { label: string; type?: string; value: string; onChange: (v: string) => void; placeholder?: string; required?: boolean }) {
+function Field({
+  label,
+  type = 'text',
+  value,
+  onChange,
+  placeholder,
+  required,
+}: {
+  label: string;
+  type?: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  required?: boolean;
+}) {
   return (
     <label className="block">
       <span className="block text-sm font-medium">{label}</span>
-      <input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} required={required}
-        className="mt-1 block w-full rounded-md border border-border bg-card px-3 py-2 text-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent" />
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        required={required}
+        className="mt-1 block w-full rounded-md border border-border bg-card px-3 py-2 text-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+      />
     </label>
   );
 }
@@ -576,7 +829,9 @@ export default Sentry.withErrorBoundary(ImporterDashboard, {
   fallback: ({ error }: { error: any }) => (
     <div className="max-w-md mx-auto px-6 py-20 text-center">
       <h1 className="text-2xl font-semibold tracking-tight text-danger">Something went wrong</h1>
-      <p className="mt-2 text-sm text-muted">An unexpected client-side error occurred. The engineering team has been notified.</p>
+      <p className="mt-2 text-sm text-muted">
+        An unexpected client-side error occurred. The engineering team has been notified.
+      </p>
       {error && (
         <pre className="mt-4 p-3 rounded bg-card border border-border text-xs text-muted overflow-auto font-mono text-left">
           {String(error.message || error)}

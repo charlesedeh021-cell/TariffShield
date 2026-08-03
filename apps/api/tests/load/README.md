@@ -11,18 +11,18 @@ reproducible performance baseline.
 - The API running and reachable (`npm run dev:api` from the repo root, or a deployed staging environment).
 - A seeded database — each script's `setup()` signs up a fresh importer and
   registers it on-chain (real Stellar testnet calls), so no separate seed
-  step is required to *run* the scripts, but see the KYC note below for the
+  step is required to _run_ the scripts, but see the KYC note below for the
   deposit script specifically.
 
 ## Endpoints covered
 
-| Script | Route | p95 target | Error rate target |
-|---|---|---|---|
-| `get-importers.js` | `GET /importers` | < 200ms | < 0.1% |
-| `get-importer-detail.js` | `GET /importers/:id` | < 150ms | < 0.1% |
-| `post-deposit.js` | `POST /importers/:id/deposit` | < 500ms | < 0.1% |
-| `post-withdraw.js` | `POST /importers/:id/withdraw` | < 500ms | < 0.1% |
-| `post-auto-top-up.js` | `POST /importers/:id/auto-top-up` | < 500ms | < 0.1% |
+| Script                   | Route                             | p95 target | Error rate target |
+| ------------------------ | --------------------------------- | ---------- | ----------------- |
+| `get-importers.js`       | `GET /importers`                  | < 200ms    | < 0.1%            |
+| `get-importer-detail.js` | `GET /importers/:id`              | < 150ms    | < 0.1%            |
+| `post-deposit.js`        | `POST /importers/:id/deposit`     | < 500ms    | < 0.1%            |
+| `post-withdraw.js`       | `POST /importers/:id/withdraw`    | < 500ms    | < 0.1%            |
+| `post-auto-top-up.js`    | `POST /importers/:id/auto-top-up` | < 500ms    | < 0.1%            |
 
 All targets are measured at 50 concurrent virtual users (`vus: 50`) over a
 1-minute run. Each script's `thresholds` block enforces these targets
@@ -67,7 +67,7 @@ point a script at that importer's id instead of registering a fresh one.
 
 ## Baseline numbers
 
-This suite establishes the *harness* and the *targets* (documented above,
+This suite establishes the _harness_ and the _targets_ (documented above,
 matching the issue's acceptance criteria). Actual baseline p95/error-rate
 numbers need to be captured by running it against a real staging
 deployment — that requires a live Postgres + Redis + Stellar-testnet-backed

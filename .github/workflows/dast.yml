@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -29,13 +32,18 @@ jobs:
 
       - name: Start Staging Environment
         run: |
+          # docker-compose.yml declares env_file: apps/api/.env for the api
+          # service; compose resolves every service's config (not just the
+          # one being targeted) before starting anything, so this has to
+          # exist before the first `docker compose up`, not just before the
+          # one that starts api.
+          cp .env.example .env
+          cp .env apps/api/.env
+
           docker compose up -d postgres
           # Wait for Postgres to be healthy
           docker compose exec -T postgres sh -c "until pg_isready -U tariffshield -d tariffshield; do sleep 1; done"
-          
-          # Setup environment and start api
-          cp .env.example .env
-          cp .env apps/api/.env
+
           docker compose up -d api
           
           # Wait for API to be ready (bounded: max 60 attempts, 2s apart = 120s)

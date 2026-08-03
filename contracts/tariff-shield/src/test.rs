@@ -1,4 +1,8 @@
 #![cfg(test)]
+// Amounts are grouped as `<whole>_<7-decimal-stroops>` (e.g. `1_000_000_0000000`
+// = 1,000,000.0000000) to keep the token's 7-decimal-place precision visible,
+// rather than clippy's uniform 3-digit grouping.
+#![allow(clippy::inconsistent_digit_grouping)]
 
 use super::*;
 use soroban_sdk::{
@@ -114,9 +118,9 @@ fn register_importer_creates_zero_balance_account() {
     assert_eq!(acct.collateral_balance, 0);
     assert_eq!(acct.required_collateral, 100_000_0000000);
     assert_eq!(acct.reserve_balance, 0);
-    assert_eq!(acct.is_clawbacked, false);
+    assert!(!acct.is_clawbacked);
     assert_eq!(acct.oracle_last_updated, 0);
-    assert_eq!(acct.dispute_raised, false);
+    assert!(!acct.dispute_raised);
 }
 
 #[test]
@@ -270,7 +274,7 @@ fn clawback_drains_buckets_to_surety_and_freezes_account() {
     let acct = s.client.get_account(&s.importer);
     assert_eq!(acct.collateral_balance, 0);
     assert_eq!(acct.reserve_balance, 0);
-    assert_eq!(acct.is_clawbacked, true);
+    assert!(acct.is_clawbacked);
 }
 
 #[test]
@@ -325,13 +329,13 @@ fn staleness_checks_work() {
     });
     s.client
         .register_importer(&s.importer, &1, &100_000_0000000);
-    assert_eq!(s.client.is_collateral_stale(&s.importer), false);
+    assert!(!s.client.is_collateral_stale(&s.importer));
 
     // fast forward 366 days
     s.env.ledger().with_mut(|li| {
         li.timestamp = 100 + 366 * 86400;
     });
-    assert_eq!(s.client.is_collateral_stale(&s.importer), true);
+    assert!(s.client.is_collateral_stale(&s.importer));
 }
 
 #[test]
@@ -657,7 +661,7 @@ fn raise_dispute_suspends_enforcement_of_new_required() {
     s.client.raise_dispute(&s.importer);
 
     let acct = s.client.get_account(&s.importer);
-    assert_eq!(acct.dispute_raised, true);
+    assert!(acct.dispute_raised);
 
     // During dispute pre_dispute_required (50k) is enforced.
     // collateral=60k, effective_required=50k → excess=10k; withdrawal should succeed.
@@ -764,7 +768,7 @@ fn resolve_dispute_accepted_keeps_new_required() {
 
     let acct = s.client.get_account(&s.importer);
     assert_eq!(acct.required_collateral, 80_000_0000000);
-    assert_eq!(acct.dispute_raised, false);
+    assert!(!acct.dispute_raised);
     assert_eq!(acct.dispute_expires_at, 0);
 }
 
@@ -790,7 +794,7 @@ fn resolve_dispute_rejected_reverts_to_old_required() {
 
     let acct = s.client.get_account(&s.importer);
     assert_eq!(acct.required_collateral, 50_000_0000000);
-    assert_eq!(acct.dispute_raised, false);
+    assert!(!acct.dispute_raised);
 }
 
 #[test]

@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 :root {
   --background: #0a0e1a;
@@ -7,11 +7,11 @@
   --border: #1e293b;
   --primary: #fafafa;
   --primary-foreground: #0a0e1a;
-  --accent: #38bdf8;            /* cyan — TariffShield brand */
+  --accent: #38bdf8; /* cyan — TariffShield brand */
   --accent-foreground: #082f49;
   --success: #10b981;
-  --danger:  #ef4444;
-  --card:    #111827;
+  --danger: #ef4444;
+  --card: #111827;
 }
 
 @theme {
@@ -26,11 +26,17 @@
   --color-success: var(--success);
   --color-danger: var(--danger);
   --color-card: var(--card);
-  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
 }
 
-html, body { height: 100%; }
+html,
+body {
+  height: 100%;
+}
 body {
   background: var(--background);
   color: var(--foreground);

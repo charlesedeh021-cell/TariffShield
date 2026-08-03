@@ -8,7 +8,7 @@
  * (see useYieldProjection.ts). Do not import this file directly from
  * component code — always go through the worker boundary.
  */
-import type { YieldProjectionRequest, YieldProjectionResponse } from "./yieldWorker.types";
+import type { YieldProjectionRequest, YieldProjectionResponse } from './yieldWorker.types';
 
 /**
  * Projects collateral balance growth month-by-month under simulated BENJI
@@ -24,10 +24,10 @@ function projectYield(input: YieldProjectionRequest): YieldProjectionResponse {
   const { currentBalanceStroops, monthlyTopUpStroops, months, annualYieldBps } = input;
 
   if (months <= 0 || months > 600) {
-    throw new Error("months must be between 1 and 600");
+    throw new Error('months must be between 1 and 600');
   }
   if (annualYieldBps < 0 || annualYieldBps > 10_000) {
-    throw new Error("annualYieldBps must be between 0 and 10000");
+    throw new Error('annualYieldBps must be between 0 and 10000');
   }
 
   const STROOPS_PER_XLM = 1e7;
@@ -36,7 +36,7 @@ function projectYield(input: YieldProjectionRequest): YieldProjectionResponse {
   const monthlyRate = annualYieldBps / 10_000 / 12;
 
   const startBalanceXlm = balanceXlm;
-  const monthly: YieldProjectionResponse["monthly"] = [];
+  const monthly: YieldProjectionResponse['monthly'] = [];
 
   for (let month = 1; month <= months; month++) {
     balanceXlm = balanceXlm * (1 + monthlyRate) + monthlyTopUpXlm;

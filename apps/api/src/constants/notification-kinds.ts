@@ -4,10 +4,10 @@
 // notification row using the same, consistent set of strings, and gives
 // TypeScript callers compile-time checking that a raw string column can't.
 export const NOTIFICATION_KINDS = {
-  BOND_APPROVED: "bond_approved",
-  KYC_REJECTED: "kyc_rejected",
-  TARIFF_SPIKE: "tariff_spike",
-  EVENT_RECEIVED: "event_received",
+  BOND_APPROVED: 'bond_approved',
+  KYC_REJECTED: 'kyc_rejected',
+  TARIFF_SPIKE: 'tariff_spike',
+  EVENT_RECEIVED: 'event_received',
 } as const;
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[keyof typeof NOTIFICATION_KINDS];

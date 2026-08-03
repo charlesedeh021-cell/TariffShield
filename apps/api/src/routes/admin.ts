@@ -1,9 +1,15 @@
-import { Router, type Request, type Response } from "express";
-import { z } from "zod";
-import { pool, getStaleAccounts, refreshImporterMetricsView } from "../db.js";
-import { authMiddleware, requireRole, privacyReacceptanceGate, tosReacceptanceGate, type AuthedRequest } from "../auth.js";
-import { platformKeypair, oracleKeypair, contractClient } from "../stellar.js";
-import { bustHtsCache } from "../services/hts-rate-validator.js";
+import { Router, type Request, type Response } from 'express';
+import { z } from 'zod';
+import { pool, getStaleAccounts, refreshImporterMetricsView } from '../db.js';
+import {
+  authMiddleware,
+  requireRole,
+  privacyReacceptanceGate,
+  tosReacceptanceGate,
+  type AuthedRequest,
+} from '../auth.js';
+import { platformKeypair, oracleKeypair, contractClient } from '../stellar.js';
+import { bustHtsCache } from '../services/hts-rate-validator.js';
 
 export const adminRouter = Router();
 adminRouter.use(authMiddleware);
@@ -21,10 +27,10 @@ const AuditLogQuerySchema = z.object({
   per_page: z.coerce.number().int().min(1).max(200).default(50),
 });
 
-adminRouter.get("/audit-log", requireRole("surety_admin"), async (req: Request, res: Response) => {
+adminRouter.get('/audit-log', requireRole('surety_admin'), async (req: Request, res: Response) => {
   const parse = AuditLogQuerySchema.safeParse(req.query);
   if (!parse.success) {
-    res.status(400).json({ error: "invalid query params", details: parse.error.issues });
+    res.status(400).json({ error: 'invalid query params', details: parse.error.issues });
     return;
   }
   const { actor_user_id, action, from, to, page, per_page } = parse.data;
@@ -50,13 +56,13 @@ adminRouter.get("/audit-log", requireRole("surety_admin"), async (req: Request, 
     conditions.push(`created_at <= $${params.length}`);
   }
 
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
   const countResult = await pool.query<{ count: string }>(
     `SELECT COUNT(*) AS count FROM audit_log ${where}`,
-    params,
+    params
   );
-  const total = parseInt(countResult.rows[0]?.count ?? "0", 10);
+  const total = parseInt(countResult.rows[0]?.count ?? '0', 10);
 
   params.push(per_page, offset);
   const dataResult = await pool.query(
@@ -64,7 +70,7 @@ adminRouter.get("/audit-log", requireRole("surety_admin"), async (req: Request, 
        FROM audit_log ${where}
        ORDER BY created_at DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
-    params,
+    params
   );
 
   res.json({
@@ -81,10 +87,10 @@ adminRouter.get("/audit-log", requireRole("surety_admin"), async (req: Request, 
   });
 });
 
-adminRouter.get("/oracle-alerts", async (req: Request, res: Response) => {
+adminRouter.get('/oracle-alerts', async (req: Request, res: Response) => {
   const user = (req as AuthedRequest).user;
-  if (user.role !== "surety_admin") {
-    res.status(403).json({ error: "surety admin only" });
+  if (user.role !== 'surety_admin') {
+    res.status(403).json({ error: 'surety admin only' });
     return;
   }
 
@@ -92,12 +98,12 @@ adminRouter.get("/oracle-alerts", async (req: Request, res: Response) => {
   const offset = parseInt(req.query.offset as string) || 0;
 
   const r = await pool.query(
-    "SELECT * FROM oracle_alerts ORDER BY alerted_at DESC LIMIT $1 OFFSET $2",
+    'SELECT * FROM oracle_alerts ORDER BY alerted_at DESC LIMIT $1 OFFSET $2',
     [limit, offset]
   );
-  
-  const countR = await pool.query("SELECT COUNT(*) FROM oracle_alerts");
-  const total = parseInt(countR.rows[0]?.count || "0");
+
+  const countR = await pool.query('SELECT COUNT(*) FROM oracle_alerts');
+  const total = parseInt(countR.rows[0]?.count || '0');
 
   res.json({
     alerts: r.rows,
@@ -107,21 +113,21 @@ adminRouter.get("/oracle-alerts", async (req: Request, res: Response) => {
   });
 });
 
-adminRouter.patch("/oracle-alerts/:id/acknowledge", async (req: Request, res: Response) => {
+adminRouter.patch('/oracle-alerts/:id/acknowledge', async (req: Request, res: Response) => {
   const user = (req as AuthedRequest).user;
-  if (user.role !== "surety_admin") {
-    res.status(403).json({ error: "surety admin only" });
+  if (user.role !== 'surety_admin') {
+    res.status(403).json({ error: 'surety admin only' });
     return;
   }
 
   const alertId = req.params.id;
   const r = await pool.query(
-    "UPDATE oracle_alerts SET acknowledged_at = now() WHERE id = $1 RETURNING *",
+    'UPDATE oracle_alerts SET acknowledged_at = now() WHERE id = $1 RETURNING *',
     [alertId]
   );
 
   if (r.rowCount === 0) {
-    res.status(404).json({ error: "alert not found" });
+    res.status(404).json({ error: 'alert not found' });
     return;
   }
 
@@ -129,7 +135,7 @@ adminRouter.patch("/oracle-alerts/:id/acknowledge", async (req: Request, res: Re
 });
 
 // #339 — GET /admin/roles — operational visibility into current role addresses
-adminRouter.get("/roles", requireRole("surety_admin"), (_req: Request, res: Response) => {
+adminRouter.get('/roles', requireRole('surety_admin'), (_req: Request, res: Response) => {
   res.json({
     generalAdmin: platformKeypair.publicKey(),
     oracleAdmin: oracleKeypair.publicKey(),
@@ -139,49 +145,52 @@ adminRouter.get("/roles", requireRole("surety_admin"), (_req: Request, res: Resp
 
 // #322 — POST /admin/privacy-policy/publish — publish a new privacy policy version
 adminRouter.post(
-  "/privacy-policy/publish",
-  requireRole("surety_admin"),
+  '/privacy-policy/publish',
+  requireRole('surety_admin'),
   async (req: Request, res: Response) => {
     const user = (req as AuthedRequest).user;
-    const parse = z.object({
-      versionId: z.string().min(1),
-      effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-      changeSummary: z.string().min(10),
-      policyText: z.string().optional(),
-      requiresReacceptance: z.boolean().default(false),
-    }).safeParse(req.body);
+    const parse = z
+      .object({
+        versionId: z.string().min(1),
+        effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        changeSummary: z.string().min(10),
+        policyText: z.string().optional(),
+        requiresReacceptance: z.boolean().default(false),
+      })
+      .safeParse(req.body);
 
     if (!parse.success) {
-      res.status(400).json({ error: "invalid input", details: parse.error.issues });
+      res.status(400).json({ error: 'invalid input', details: parse.error.issues });
       return;
     }
-    const { versionId, effectiveDate, changeSummary, policyText, requiresReacceptance } = parse.data;
+    const { versionId, effectiveDate, changeSummary, policyText, requiresReacceptance } =
+      parse.data;
 
     const result = await pool.query(
       `INSERT INTO privacy_policy_versions
          (version_id, effective_date, policy_text, change_summary, requires_reacceptance, published_by)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, version_id, effective_date, requires_reacceptance, published_at`,
-      [versionId, effectiveDate, policyText ?? null, changeSummary, requiresReacceptance, user.id],
+      [versionId, effectiveDate, policyText ?? null, changeSummary, requiresReacceptance, user.id]
     );
 
     if (requiresReacceptance) {
       // Flag all active users so their next request returns 403 with reason
       await pool.query(
         `UPDATE users SET privacy_reacceptance_required = TRUE
-         WHERE role IN ('importer', 'surety_admin')`,
+         WHERE role IN ('importer', 'surety_admin')`
       );
     }
 
     res.status(201).json({ version: result.rows[0] });
-  },
+  }
 );
 
 // SOC 2 CC6.2: quarterly access review — surfaces accounts with no successful login
 // in the past N days (default 90). Intended for use by the platform security team.
 adminRouter.get(
-  "/access-review",
-  requireRole("surety_admin"),
+  '/access-review',
+  requireRole('surety_admin'),
   async (req: Request, res: Response) => {
     const days = Math.max(1, parseInt(req.query.days as string) || 90);
     const accounts = await getStaleAccounts(days);
@@ -190,7 +199,7 @@ adminRouter.get(
       count: accounts.length,
       accounts,
     });
-  },
+  }
 );
 
 // ── HTS rate cache management ─────────────────────────────────────────────────
@@ -207,15 +216,15 @@ adminRouter.get(
  * The next lookup for any busted code will re-fetch from the USITC HTS API.
  */
 adminRouter.post(
-  "/refresh-hts-cache",
-  requireRole("surety_admin"),
+  '/refresh-hts-cache',
+  requireRole('surety_admin'),
   async (req: Request, res: Response) => {
     const parse = z
       .object({ htsCodes: z.array(z.string()).optional().default([]) })
       .safeParse(req.body);
 
     if (!parse.success) {
-      res.status(400).json({ error: "invalid input", details: parse.error.issues });
+      res.status(400).json({ error: 'invalid input', details: parse.error.issues });
       return;
     }
 
@@ -224,12 +233,12 @@ adminRouter.post(
     res.json({
       message:
         parse.data.htsCodes.length === 0
-          ? "Full HTS rate cache cleared"
+          ? 'Full HTS rate cache cleared'
           : `Cache busted for ${parse.data.htsCodes.length} HTS code(s)`,
       deletedRows: deleted,
-      htsCodes: parse.data.htsCodes.length > 0 ? parse.data.htsCodes : "all",
+      htsCodes: parse.data.htsCodes.length > 0 ? parse.data.htsCodes : 'all',
     });
-  },
+  }
 );
 // ── Oracle price feed endpoints ───────────────────────────────────────────────
 
@@ -255,12 +264,12 @@ const OracleFeedQuerySchema = z.object({
  *   per_page     integer 1–200, default 50
  */
 adminRouter.get(
-  "/oracle-feed",
-  requireRole("surety_admin"),
+  '/oracle-feed',
+  requireRole('surety_admin'),
   async (req: Request, res: Response) => {
     const parse = OracleFeedQuerySchema.safeParse(req.query);
     if (!parse.success) {
-      res.status(400).json({ error: "invalid query params", details: parse.error.issues });
+      res.status(400).json({ error: 'invalid query params', details: parse.error.issues });
       return;
     }
     const { importer_id, from, to, page, per_page } = parse.data;
@@ -283,14 +292,14 @@ adminRouter.get(
       conditions.push(`created_at <= $${params.length}`);
     }
 
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     // Count total matching rows.
     const countResult = await pool.query<{ count: string }>(
       `SELECT COUNT(*) AS count FROM oracle_price_feed ${where}`,
-      params,
+      params
     );
-    const total = parseInt(countResult.rows[0]?.count ?? "0", 10);
+    const total = parseInt(countResult.rows[0]?.count ?? '0', 10);
 
     // Fetch the page.
     params.push(per_page, offset);
@@ -305,7 +314,7 @@ adminRouter.get(
          ${where}
          ORDER BY created_at DESC
          LIMIT $${params.length - 1} OFFSET $${params.length}`,
-      params,
+      params
     );
 
     res.json({
@@ -320,7 +329,7 @@ adminRouter.get(
         total_pages: Math.ceil(total / per_page),
       },
     });
-  },
+  }
 );
 
 /**
@@ -330,13 +339,13 @@ adminRouter.get(
  * Optional query params: importer_id, from, to (same as the paginated endpoint).
  */
 adminRouter.get(
-  "/oracle-feed/export.csv",
-  requireRole("surety_admin"),
+  '/oracle-feed/export.csv',
+  requireRole('surety_admin'),
   async (req: Request, res: Response) => {
     const filterSchema = OracleFeedQuerySchema.omit({ page: true, per_page: true });
     const parse = filterSchema.safeParse(req.query);
     if (!parse.success) {
-      res.status(400).json({ error: "invalid query params", details: parse.error.issues });
+      res.status(400).json({ error: 'invalid query params', details: parse.error.issues });
       return;
     }
     const { importer_id, from, to } = parse.data;
@@ -357,7 +366,7 @@ adminRouter.get(
       conditions.push(`created_at <= $${params.length}`);
     }
 
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const rows = await pool.query(
       `SELECT id, importer_id, importer_address,
@@ -368,24 +377,24 @@ adminRouter.get(
               to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
          FROM oracle_price_feed ${where}
          ORDER BY created_at ASC`,
-      params,
+      params
     );
 
     const CSV_HEADER =
-      "id,importer_id,importer_address,required_collateral,previous_collateral," +
-      "pct_change,tx_hash,ledger_sequence,set_by,emergency_override,created_at\n";
+      'id,importer_id,importer_address,required_collateral,previous_collateral,' +
+      'pct_change,tx_hash,ledger_sequence,set_by,emergency_override,created_at\n';
 
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="oracle_price_feed_${new Date().toISOString().slice(0, 10)}.csv"`,
+      'Content-Disposition',
+      `attachment; filename="oracle_price_feed_${new Date().toISOString().slice(0, 10)}.csv"`
     );
 
     res.write(CSV_HEADER);
     for (const row of rows.rows) {
       const line = [
         row.id,
-        row.importer_id ?? "",
+        row.importer_id ?? '',
         row.importer_address,
         row.required_collateral,
         row.previous_collateral,
@@ -396,12 +405,12 @@ adminRouter.get(
         row.emergency_override,
         row.created_at,
       ]
-        .map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`)
-        .join(",");
-      res.write(line + "\n");
+        .map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`)
+        .join(',');
+      res.write(line + '\n');
     }
     res.end();
-  },
+  }
 );
 
 // ── #247: POST /admin/auto-top-up — batch auto-top-up ──────────────────────
@@ -446,7 +455,7 @@ interface AutoTopUpSuccess {
 async function mapWithConcurrency<T, R>(
   items: T[],
   concurrency: number,
-  worker: (item: T) => Promise<R>,
+  worker: (item: T) => Promise<R>
 ): Promise<PromiseSettledResult<R>[]> {
   const results: PromiseSettledResult<R>[] = new Array(items.length);
   let nextIndex = 0;
@@ -456,9 +465,9 @@ async function mapWithConcurrency<T, R>(
       const current = nextIndex++;
       if (current >= items.length) return;
       try {
-        results[current] = { status: "fulfilled", value: await worker(items[current]!) };
+        results[current] = { status: 'fulfilled', value: await worker(items[current]!) };
       } catch (reason) {
-        results[current] = { status: "rejected", reason };
+        results[current] = { status: 'rejected', reason };
       }
     }
   }
@@ -472,66 +481,80 @@ const BatchAutoTopUpSchema = z.object({
   importer_ids: z.array(z.string().uuid()).optional(),
 });
 
-adminRouter.post("/auto-top-up", requireRole("surety_admin"), async (req: Request, res: Response) => {
-  const parse = BatchAutoTopUpSchema.safeParse(req.body ?? {});
-  if (!parse.success) {
-    res.status(400).json({ error: "invalid input", details: parse.error.issues });
-    return;
-  }
-  const { importer_ids } = parse.data;
+adminRouter.post(
+  '/auto-top-up',
+  requireRole('surety_admin'),
+  async (req: Request, res: Response) => {
+    const parse = BatchAutoTopUpSchema.safeParse(req.body ?? {});
+    if (!parse.success) {
+      res.status(400).json({ error: 'invalid input', details: parse.error.issues });
+      return;
+    }
+    const { importer_ids } = parse.data;
 
-  const params: unknown[] = [];
-  let filterClause = "";
-  if (importer_ids && importer_ids.length > 0) {
-    params.push(importer_ids);
-    filterClause = `AND im.importer_id = ANY($${params.length}::uuid[])`;
-  }
+    const params: unknown[] = [];
+    let filterClause = '';
+    if (importer_ids && importer_ids.length > 0) {
+      params.push(importer_ids);
+      filterClause = `AND im.importer_id = ANY($${params.length}::uuid[])`;
+    }
 
-  // Single query for every eligible importer — required kyc_status = 'approved'
-  // (#229) since auto-top-up moves an importer's own collateral funds, and the
-  // importer_metrics view already excludes soft-deleted importers.
-  const eligible = await pool.query<EligibleImporter>(
-    `SELECT im.importer_id, im.stellar_address
+    // Single query for every eligible importer — required kyc_status = 'approved'
+    // (#229) since auto-top-up moves an importer's own collateral funds, and the
+    // importer_metrics view already excludes soft-deleted importers.
+    const eligible = await pool.query<EligibleImporter>(
+      `SELECT im.importer_id, im.stellar_address
        FROM importer_metrics im
        JOIN importers i ON i.id = im.importer_id
       WHERE i.kyc_status = 'approved'
         AND im.required_collateral > 0
         AND im.current_balance < im.required_collateral
         ${filterClause}`,
-    params,
-  );
+      params
+    );
 
-  const outcomes = await mapWithConcurrency(
-    eligible.rows,
-    CONCURRENCY_CAP,
-    async (row): Promise<AutoTopUpSuccess> => {
-      const onChain = await contractClient.autoTopUp(platformKeypair, row.stellar_address);
-      // Bare ON CONFLICT DO NOTHING: correct whether contract_events is
-      // partitioned (#228) or not — see lib/contract-events-partitions.ts
-      // for why an explicit column list can't be used once it is.
-      await pool.query(
-        `INSERT INTO contract_events (importer_id, kind, amount, tx_hash, ledger_sequence, event_index)
+    const outcomes = await mapWithConcurrency(
+      eligible.rows,
+      CONCURRENCY_CAP,
+      async (row): Promise<AutoTopUpSuccess> => {
+        const onChain = await contractClient.autoTopUp(platformKeypair, row.stellar_address);
+        // Bare ON CONFLICT DO NOTHING: correct whether contract_events is
+        // partitioned (#228) or not — see lib/contract-events-partitions.ts
+        // for why an explicit column list can't be used once it is.
+        await pool.query(
+          `INSERT INTO contract_events (importer_id, kind, amount, tx_hash, ledger_sequence, event_index)
          VALUES ($1, 'auto_top_up', $2, $3, $4, $5)
          ON CONFLICT DO NOTHING`,
-        [row.importer_id, onChain.result.toString(), onChain.txHash, onChain.ledgerSequence, onChain.applicationOrder],
-      );
-      return { importerId: row.importer_id, txHash: onChain.txHash, amount: onChain.result.toString() };
-    },
-  );
+          [
+            row.importer_id,
+            onChain.result.toString(),
+            onChain.txHash,
+            onChain.ledgerSequence,
+            onChain.applicationOrder,
+          ]
+        );
+        return {
+          importerId: row.importer_id,
+          txHash: onChain.txHash,
+          amount: onChain.result.toString(),
+        };
+      }
+    );
 
-  const errors: Array<{ id: string; reason: string }> = [];
-  let succeeded = 0;
-  outcomes.forEach((outcome, i) => {
-    if (outcome.status === "fulfilled") {
-      succeeded += 1;
-    } else {
-      errors.push({ id: eligible.rows[i]!.importer_id, reason: String(outcome.reason) });
-    }
-  });
+    const errors: Array<{ id: string; reason: string }> = [];
+    let succeeded = 0;
+    outcomes.forEach((outcome, i) => {
+      if (outcome.status === 'fulfilled') {
+        succeeded += 1;
+      } else {
+        errors.push({ id: eligible.rows[i]!.importer_id, reason: String(outcome.reason) });
+      }
+    });
 
-  // Best-effort refresh so a subsequent call sees updated balances; a
-  // failure here shouldn't turn a successful batch into an error response.
-  await refreshImporterMetricsView().catch(() => undefined);
+    // Best-effort refresh so a subsequent call sees updated balances; a
+    // failure here shouldn't turn a successful batch into an error response.
+    await refreshImporterMetricsView().catch(() => undefined);
 
-  res.json({ succeeded, failed: errors.length, errors });
-});
+    res.json({ succeeded, failed: errors.length, errors });
+  }
+);

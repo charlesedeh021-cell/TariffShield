@@ -1,17 +1,19 @@
-"use client";
+'use client';
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { Nav } from "@/components/Nav";
-import { api, ApiError } from "@/lib/api";
-import { setSession } from "@/lib/auth";
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { Nav } from '@/components/Nav';
+import { api, ApiError } from '@/lib/api';
+import { setSession } from '@/lib/auth';
 
 export default function Signup() {
   const router = useRouter();
-  const [form, setForm] = useState<{ email: string; password: string; role: "importer" | "surety_admin" }>(
-    { email: "", password: "", role: "importer" },
-  );
+  const [form, setForm] = useState<{
+    email: string;
+    password: string;
+    role: 'importer' | 'surety_admin';
+  }>({ email: '', password: '', role: 'importer' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,9 +24,9 @@ export default function Signup() {
     try {
       const { token, user } = await api.signup(form);
       setSession(token, user);
-      router.push(user.role === "surety_admin" ? "/surety" : "/app");
+      router.push(user.role === 'surety_admin' ? '/surety' : '/app');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "signup failed");
+      setError(err instanceof ApiError ? err.message : 'signup failed');
     } finally {
       setLoading(false);
     }
@@ -42,7 +44,9 @@ export default function Signup() {
             <span className="block text-sm font-medium">Role</span>
             <select
               value={form.role}
-              onChange={(e) => setForm({ ...form, role: e.target.value as "importer" | "surety_admin" })}
+              onChange={(e) =>
+                setForm({ ...form, role: e.target.value as 'importer' | 'surety_admin' })
+              }
               className="mt-1 block w-full rounded-md border border-border bg-card px-3 py-2 text-sm focus:border-accent focus:outline-none"
             >
               <option value="importer">Importer (CBP bondholder)</option>
@@ -73,18 +77,23 @@ export default function Signup() {
             />
           </label>
           {error ? (
-            <p className="rounded border border-danger bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p>
+            <p className="rounded border border-danger bg-danger/10 px-3 py-2 text-sm text-danger">
+              {error}
+            </p>
           ) : null}
           <button
             type="submit"
             disabled={loading}
             className="w-full rounded-md bg-accent px-4 py-2.5 text-accent-foreground hover:opacity-90 disabled:opacity-50 text-sm font-medium"
           >
-            {loading ? "Creating…" : "Create account"}
+            {loading ? 'Creating…' : 'Create account'}
           </button>
         </form>
         <p className="mt-6 text-sm text-muted">
-          Already have an account? <Link href="/login" className="text-accent hover:underline">Log in</Link>
+          Already have an account?{' '}
+          <Link href="/login" className="text-accent hover:underline">
+            Log in
+          </Link>
         </p>
       </main>
     </>

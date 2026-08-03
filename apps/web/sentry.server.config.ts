@@ -2,12 +2,12 @@
 // The config you add here will be used whenever the server handles a request.
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
-import * as Sentry from "@sentry/nextjs";
+import * as Sentry from '@sentry/nextjs';
 
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN || process.env.SENTRY_DSN,
 
-  environment: process.env.NODE_ENV || "development",
+  environment: process.env.NODE_ENV || 'development',
 
   release: process.env.VERCEL_GIT_COMMIT_SHA || process.env.SENTRY_RELEASE,
 

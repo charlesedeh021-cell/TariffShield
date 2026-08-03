@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { type ContractEvent } from "@/lib/api";
+import { useState } from 'react';
+import { type ContractEvent } from '@/lib/api';
 
 export function BondTimeline({ events }: { events: ContractEvent[] }) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -23,16 +23,17 @@ export function BondTimeline({ events }: { events: ContractEvent[] }) {
   });
 
   const getEventColor = (kind: string) => {
-    if (kind.includes("deposit")) return "bg-accent/20 text-accent";
-    if (kind.includes("yield") || kind.includes("accrue")) return "bg-success/20 text-success";
-    if (kind.includes("clawback")) return "bg-danger/20 text-danger";
-    if (kind.includes("top-up") || kind.includes("topup")) return "bg-yellow-500/20 text-yellow-600";
-    return "bg-muted/20 text-muted";
+    if (kind.includes('deposit')) return 'bg-accent/20 text-accent';
+    if (kind.includes('yield') || kind.includes('accrue')) return 'bg-success/20 text-success';
+    if (kind.includes('clawback')) return 'bg-danger/20 text-danger';
+    if (kind.includes('top-up') || kind.includes('topup'))
+      return 'bg-yellow-500/20 text-yellow-600';
+    return 'bg-muted/20 text-muted';
   };
 
   const weeks = [];
   let week: Date[] = [];
-  let d = new Date(startDate);
+  const d = new Date(startDate);
 
   while (d <= lastDay || week.length > 0) {
     week.push(new Date(d));
@@ -55,17 +56,27 @@ export function BondTimeline({ events }: { events: ContractEvent[] }) {
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Bond Timeline</h2>
         <div className="flex gap-2">
-          <button onClick={prevMonth} className="text-xs px-2 py-1 border border-border rounded hover:bg-card">←</button>
+          <button
+            onClick={prevMonth}
+            className="text-xs px-2 py-1 border border-border rounded hover:bg-card"
+          >
+            ←
+          </button>
           <span className="text-xs font-medium min-w-32 text-center">
-            {firstDay.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+            {firstDay.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
           </span>
-          <button onClick={nextMonth} className="text-xs px-2 py-1 border border-border rounded hover:bg-card">→</button>
+          <button
+            onClick={nextMonth}
+            className="text-xs px-2 py-1 border border-border rounded hover:bg-card"
+          >
+            →
+          </button>
         </div>
       </div>
 
       <div className="rounded-lg border border-border bg-card overflow-hidden">
         <div className="grid grid-cols-7 bg-muted/10">
-          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
             <div key={day} className="p-2 text-xs font-semibold text-center text-muted">
               {day}
             </div>
@@ -82,7 +93,7 @@ export function BondTimeline({ events }: { events: ContractEvent[] }) {
               return (
                 <div
                   key={`${wi}-${di}`}
-                  className={`min-h-20 p-2 text-xs ${isCurrentMonth ? "bg-card" : "bg-muted/5 text-muted/50"}`}
+                  className={`min-h-20 p-2 text-xs ${isCurrentMonth ? 'bg-card' : 'bg-muted/5 text-muted/50'}`}
                 >
                   <p className="font-semibold">{date.getDate()}</p>
                   <div className="mt-1 space-y-0.5">
@@ -92,7 +103,7 @@ export function BondTimeline({ events }: { events: ContractEvent[] }) {
                         className={`px-1 py-0.5 rounded text-xs truncate font-medium ${getEventColor(e.kind)}`}
                         title={e.kind}
                       >
-                        {e.kind.split("_").pop()}
+                        {e.kind.split('_').pop()}
                       </div>
                     ))}
                     {dayEvents.length > 2 && (

@@ -1,23 +1,23 @@
-import client from "prom-client";
-import { pino } from "pino";
-import { getActiveBonds } from "../db.js";
-import { getBondOnChain } from "../stellar.js";
+import client from 'prom-client';
+import { pino } from 'pino';
+import { getActiveBonds } from '../db.js';
+import { getBondOnChain } from '../stellar.js';
 
 const logger = pino({
-  name: "reconciliation-job",
-  level: "info",
+  name: 'reconciliation-job',
+  level: 'info',
 });
 
 // Prometheus metrics
 const driftGauge = new client.Gauge({
-  name: "contract_balance_drift_count",
-  help: "Number of bonds where DB balance differs from on-chain balance by > 0.1%",
+  name: 'contract_balance_drift_count',
+  help: 'Number of bonds where DB balance differs from on-chain balance by > 0.1%',
 });
 
 const runsCounter = new client.Counter({
-  name: "reconciliation_runs_total",
-  help: "Total number of balance reconciliation runs",
-  labelNames: ["outcome"],
+  name: 'reconciliation_runs_total',
+  help: 'Total number of balance reconciliation runs',
+  labelNames: ['outcome'],
 });
 
 let isRunning = false;
@@ -27,7 +27,7 @@ let isRunning = false;
  */
 export async function reconcileBalances(): Promise<void> {
   if (isRunning) {
-    logger.warn("Reconciliation job is already running, skipping this interval.");
+    logger.warn('Reconciliation job is already running, skipping this interval.');
     return;
   }
 
@@ -36,7 +36,7 @@ export async function reconcileBalances(): Promise<void> {
   let hasError = false;
 
   try {
-    logger.info("Starting balance reconciliation run...");
+    logger.info('Starting balance reconciliation run...');
     const bonds = await getActiveBonds();
 
     for (const bond of bonds) {
@@ -60,17 +60,17 @@ export async function reconcileBalances(): Promise<void> {
           driftCount++;
         }
       } catch (err) {
-        logger.error({ err, bondId: bond.bondId }, "Failed to reconcile bond");
+        logger.error({ err, bondId: bond.bondId }, 'Failed to reconcile bond');
         hasError = true;
       }
     }
 
     driftGauge.set(driftCount);
-    runsCounter.inc({ outcome: hasError ? "partial_failure" : "success" });
-    logger.info({ driftCount, hasError }, "Reconciliation run completed.");
+    runsCounter.inc({ outcome: hasError ? 'partial_failure' : 'success' });
+    logger.info({ driftCount, hasError }, 'Reconciliation run completed.');
   } catch (err) {
-    logger.error({ err }, "Fatal error in reconciliation job");
-    runsCounter.inc({ outcome: "error" });
+    logger.error({ err }, 'Fatal error in reconciliation job');
+    runsCounter.inc({ outcome: 'error' });
   } finally {
     isRunning = false;
   }
@@ -78,13 +78,13 @@ export async function reconcileBalances(): Promise<void> {
 
 function logDrift(bondId: string, dbBalance: number, onChainBalance: number, driftPercent: number) {
   logger.error(
-    { 
-      bondId, 
-      dbBalance, 
-      onChainBalance, 
-      driftPercent: (driftPercent * 100).toFixed(2) + "%" 
+    {
+      bondId,
+      dbBalance,
+      onChainBalance,
+      driftPercent: (driftPercent * 100).toFixed(2) + '%',
     },
-    "Balance drift detected for bond!"
+    'Balance drift detected for bond!'
   );
 }
 
@@ -92,12 +92,17 @@ function logDrift(bondId: string, dbBalance: number, onChainBalance: number, dri
  * Starts the reconciliation job on a 5-minute interval.
  */
 export function startReconciliationJob(): void {
-  logger.info("Scheduling balance reconciliation job (every 5m)");
+  logger.info('Scheduling balance reconciliation job (every 5m)');
   // Run immediately on boot
-  reconcileBalances().catch((err) => logger.error({ err }, "Initial reconciliation run failed"));
-  
+  reconcileBalances().catch((err) => logger.error({ err }, 'Initial reconciliation run failed'));
+
   // Schedule subsequent runs
-  setInterval(() => {
-    reconcileBalances().catch((err) => logger.error({ err }, "Interval reconciliation run failed"));
-  }, 5 * 60 * 1000);
+  setInterval(
+    () => {
+      reconcileBalances().catch((err) =>
+        logger.error({ err }, 'Interval reconciliation run failed')
+      );
+    },
+    5 * 60 * 1000
+  );
 }

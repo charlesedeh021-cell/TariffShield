@@ -3,12 +3,12 @@
 // Note that this config is unrelated to the Vercel Edge Runtime and is also required when running locally.
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
-import * as Sentry from "@sentry/nextjs";
+import * as Sentry from '@sentry/nextjs';
 
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN || process.env.SENTRY_DSN,
 
-  environment: process.env.NODE_ENV || "development",
+  environment: process.env.NODE_ENV || 'development',
 
   release: process.env.VERCEL_GIT_COMMIT_SHA || process.env.SENTRY_RELEASE,
 

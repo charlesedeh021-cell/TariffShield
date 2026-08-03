@@ -1,7 +1,6 @@
-import pino from "pino";
-import { env } from "../config/env.js";
+import pino from 'pino';
 
-const logger = pino({ name: "cbp-duty-lookup" });
+const logger = pino({ name: 'cbp-duty-lookup' });
 
 // In-memory map for caching
 const cache = new Map<string, { rate: number; expiresAt: number }>();
@@ -9,31 +8,31 @@ const cache = new Map<string, { rate: number; expiresAt: number }>();
 export type CbpLookupResult = {
   htsCode: string;
   dutyRate: number | null;
-  source: "cache" | "api" | "fallback";
+  source: 'cache' | 'api' | 'fallback';
 };
 
 export async function lookupCbpDutyRate(htsCode: string): Promise<CbpLookupResult> {
   // Check cache
   const cached = cache.get(htsCode);
   if (cached && cached.expiresAt > Date.now()) {
-    return { htsCode, dutyRate: cached.rate, source: "cache" };
+    return { htsCode, dutyRate: cached.rate, source: 'cache' };
   }
 
   try {
     // In a real app, this queries the CBP ACE trade data API or HTS online schedule endpoint
     // We'll mock the response based on the HTS code for demonstration purposes
     const mockRate = generateMockRateForHts(htsCode);
-    
+
     // Simulate network delay
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     // Cache for 24 hours
     cache.set(htsCode, { rate: mockRate, expiresAt: Date.now() + 86400 * 1000 });
 
-    return { htsCode, dutyRate: mockRate, source: "api" };
+    return { htsCode, dutyRate: mockRate, source: 'api' };
   } catch (error) {
-    logger.error({ err: error, htsCode }, "Failed to lookup CBP duty rate");
-    return { htsCode, dutyRate: null, source: "fallback" };
+    logger.error({ err: error, htsCode }, 'Failed to lookup CBP duty rate');
+    return { htsCode, dutyRate: null, source: 'fallback' };
   }
 }
 

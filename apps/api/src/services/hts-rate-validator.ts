@@ -15,13 +15,10 @@
  *   • USITC API unavailable                        → "api_unavailable" (WARNING, skip)
  */
 
-import pino from "pino";
-import { pool } from "../db.js";
+import pino from 'pino';
+import { pool } from '../db.js';
 
-const logger = pino({ name: "hts-rate-validator" });
-
-/** Seven days in milliseconds. */
-const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const logger = pino({ name: 'hts-rate-validator' });
 
 /** Tolerance band: 5 % (0.05). */
 const TOLERANCE = 0.05;
@@ -32,11 +29,7 @@ export interface HtsLineItem {
 }
 
 export type ValidationStatus =
-  | "ok"
-  | "underreported"
-  | "overreported"
-  | "unknown_hts"
-  | "api_unavailable";
+  'ok' | 'underreported' | 'overreported' | 'unknown_hts' | 'api_unavailable';
 
 export interface HtsValidationResult {
   hts_code: string;
@@ -65,27 +58,27 @@ export interface HtsValidationSummary {
 // We parse the JSON "General Rate of Duty" field which is a string like "6.5%",
 // "Free", or a compound expression.  We convert it to a decimal fraction.
 
-const USITC_BASE = "https://hts.usitc.gov/reststop";
+const USITC_BASE = 'https://hts.usitc.gov/reststop';
 
 /**
  * Fetch the Column 1 General Rate from the USITC HTS online API.
  * Returns null when the code is not found or the API is unavailable.
  */
 async function fetchStatutoryRate(
-  htsCode: string,
+  htsCode: string
 ): Promise<{ rate: number | null; unavailable: boolean }> {
   // Normalise code: strip punctuation for the query, keep original for display
-  const normalised = htsCode.replace(/[^0-9]/g, "");
+  const normalised = htsCode.replace(/[^0-9]/g, '');
   const url = `${USITC_BASE}/exportHts?htsCodes=${encodeURIComponent(normalised)}`;
 
   try {
     const resp = await fetch(url, {
       signal: AbortSignal.timeout(8000),
-      headers: { Accept: "application/json" },
+      headers: { Accept: 'application/json' },
     });
 
     if (!resp.ok) {
-      logger.warn({ htsCode, status: resp.status }, "USITC HTS API returned non-200");
+      logger.warn({ htsCode, status: resp.status }, 'USITC HTS API returned non-200');
       return { rate: null, unavailable: true };
     }
 
@@ -98,10 +91,10 @@ async function fetchStatutoryRate(
     // Field names vary slightly between USITC API versions; try common candidates.
     const entry = data[0]!;
     const rawRate =
-      (entry["col1General"] as string | undefined) ??
-      (entry["generalRateOfDuty"] as string | undefined) ??
-      (entry["Col1General"] as string | undefined) ??
-      (entry["general"] as string | undefined);
+      (entry['col1General'] as string | undefined) ??
+      (entry['generalRateOfDuty'] as string | undefined) ??
+      (entry['Col1General'] as string | undefined) ??
+      (entry['general'] as string | undefined);
 
     if (!rawRate) return { rate: null, unavailable: false };
 
@@ -109,9 +102,11 @@ async function fetchStatutoryRate(
     return { rate: parsed, unavailable: false };
   } catch (err: unknown) {
     const isTimeout =
-      err instanceof Error &&
-      (err.name === "TimeoutError" || err.message.includes("timeout"));
-    logger.warn({ htsCode, err: String(err) }, isTimeout ? "USITC HTS API timed out" : "USITC HTS API fetch error");
+      err instanceof Error && (err.name === 'TimeoutError' || err.message.includes('timeout'));
+    logger.warn(
+      { htsCode, err: String(err) },
+      isTimeout ? 'USITC HTS API timed out' : 'USITC HTS API fetch error'
+    );
     return { rate: null, unavailable: true };
   }
 }
@@ -129,7 +124,7 @@ async function fetchStatutoryRate(
 export function parseDutyRateString(raw: string): number | null {
   const s = raw.trim().toLowerCase();
 
-  if (s === "free" || s === "0%" || s === "0.0%") return 0;
+  if (s === 'free' || s === '0%' || s === '0.0%') return 0;
 
   // Extract the first percentage value found.
   const pctMatch = s.match(/([\d]+(?:\.[\d]+)?)\s*%/);
@@ -156,7 +151,7 @@ async function getCached(htsCode: string): Promise<CacheRow | null> {
        FROM hts_rate_cache
       WHERE hts_code = $1
         AND fetched_at > now() - INTERVAL '7 days'`,
-    [htsCode],
+    [htsCode]
   );
   return r.rows[0] ?? null;
 }
@@ -164,7 +159,7 @@ async function getCached(htsCode: string): Promise<CacheRow | null> {
 async function upsertCache(
   htsCode: string,
   rate: number | null,
-  unavailable: boolean,
+  unavailable: boolean
 ): Promise<void> {
   await pool.query(
     `INSERT INTO hts_rate_cache (hts_code, statutory_rate, is_unavailable, fetched_at)
@@ -173,20 +168,19 @@ async function upsertCache(
      DO UPDATE SET statutory_rate = EXCLUDED.statutory_rate,
                    is_unavailable = EXCLUDED.is_unavailable,
                    fetched_at = EXCLUDED.fetched_at`,
-    [htsCode, rate ?? null, unavailable],
+    [htsCode, rate ?? null, unavailable]
   );
 }
 
 /** Bust cache for specific HTS codes, or all codes when codes array is empty. */
 export async function bustHtsCache(htsCodes: string[]): Promise<number> {
   if (htsCodes.length === 0) {
-    const r = await pool.query("DELETE FROM hts_rate_cache");
+    const r = await pool.query('DELETE FROM hts_rate_cache');
     return r.rowCount ?? 0;
   }
-  const r = await pool.query(
-    "DELETE FROM hts_rate_cache WHERE hts_code = ANY($1::text[])",
-    [htsCodes],
-  );
+  const r = await pool.query('DELETE FROM hts_rate_cache WHERE hts_code = ANY($1::text[])', [
+    htsCodes,
+  ]);
   return r.rowCount ?? 0;
 }
 
@@ -197,7 +191,7 @@ export async function bustHtsCache(htsCodes: string[]): Promise<number> {
  * Checks the DB cache first; falls back to the USITC API and caches the result.
  */
 async function resolveStatutoryRate(
-  htsCode: string,
+  htsCode: string
 ): Promise<{ rate: number | null; unavailable: boolean }> {
   const cached = await getCached(htsCode);
   if (cached) {
@@ -209,7 +203,7 @@ async function resolveStatutoryRate(
 
   const { rate, unavailable } = await fetchStatutoryRate(htsCode);
   await upsertCache(htsCode, rate, unavailable).catch((err) =>
-    logger.error({ err, htsCode }, "Failed to upsert HTS rate cache"),
+    logger.error({ err, htsCode }, 'Failed to upsert HTS rate cache')
   );
   return { rate, unavailable };
 }
@@ -219,9 +213,7 @@ async function resolveStatutoryRate(
  *
  * Returns a summary split into blocking errors, warnings, and passed items.
  */
-export async function validateHtsRates(
-  items: HtsLineItem[],
-): Promise<HtsValidationSummary> {
+export async function validateHtsRates(items: HtsLineItem[]): Promise<HtsValidationSummary> {
   const results: HtsValidationResult[] = await Promise.all(
     items.map(async (item): Promise<HtsValidationResult> => {
       const { rate: statutory, unavailable } = await resolveStatutoryRate(item.hts_code);
@@ -232,7 +224,7 @@ export async function validateHtsRates(
           hts_code: item.hts_code,
           declared_rate: item.declared_rate,
           statutory_rate: null,
-          status: "api_unavailable",
+          status: 'api_unavailable',
           message: `USITC HTS API unavailable for ${item.hts_code}; skipping rate check`,
         };
       }
@@ -243,7 +235,7 @@ export async function validateHtsRates(
           hts_code: item.hts_code,
           declared_rate: item.declared_rate,
           statutory_rate: null,
-          status: "unknown_hts",
+          status: 'unknown_hts',
           message: `HTS code ${item.hts_code} not found in USITC schedule; skipping rate check`,
         };
       }
@@ -256,7 +248,7 @@ export async function validateHtsRates(
           hts_code: item.hts_code,
           declared_rate: item.declared_rate,
           statutory_rate: statutory,
-          status: "underreported",
+          status: 'underreported',
           message:
             `Declared rate ${(item.declared_rate * 100).toFixed(2)}% is more than 5% below ` +
             `statutory rate ${(statutory * 100).toFixed(2)}% for HTS ${item.hts_code}`,
@@ -268,7 +260,7 @@ export async function validateHtsRates(
           hts_code: item.hts_code,
           declared_rate: item.declared_rate,
           statutory_rate: statutory,
-          status: "overreported",
+          status: 'overreported',
           message:
             `Declared rate ${(item.declared_rate * 100).toFixed(2)}% is more than 5% above ` +
             `statutory rate ${(statutory * 100).toFixed(2)}% for HTS ${item.hts_code}`,
@@ -279,17 +271,18 @@ export async function validateHtsRates(
         hts_code: item.hts_code,
         declared_rate: item.declared_rate,
         statutory_rate: statutory,
-        status: "ok",
+        status: 'ok',
         message: `HTS ${item.hts_code} rate OK`,
       };
-    }),
+    })
   );
 
-  const blocking = results.filter((r) => r.status === "underreported");
+  const blocking = results.filter((r) => r.status === 'underreported');
   const warnings = results.filter(
-    (r) => r.status === "overreported" || r.status === "unknown_hts" || r.status === "api_unavailable",
+    (r) =>
+      r.status === 'overreported' || r.status === 'unknown_hts' || r.status === 'api_unavailable'
   );
-  const passed = results.filter((r) => r.status === "ok");
+  const passed = results.filter((r) => r.status === 'ok');
 
   return { blocking, warnings, passed, hasBlockingErrors: blocking.length > 0 };
 }

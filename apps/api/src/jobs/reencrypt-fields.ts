@@ -1,5 +1,10 @@
-import { pool } from "../db.js";
-import { encryptField, decryptField, CURRENT_KEY_VERSION, type EncryptedValue } from "../lib/field-encryption.js";
+import { pool } from '../db.js';
+import {
+  encryptField,
+  decryptField,
+  CURRENT_KEY_VERSION,
+  type EncryptedValue,
+} from '../lib/field-encryption.js';
 
 // Rolling re-encryption job (#314): updates all importer EIN values encrypted with
 // an older key version to use the current version. Runs in-process; for large
@@ -9,11 +14,11 @@ export async function reencryptImporterEins(): Promise<void> {
   const rows = await pool.query<{ id: string; ein_encrypted: string; ein_key_version: number }>(
     `SELECT id, ein_encrypted, ein_key_version FROM importers
      WHERE ein_encrypted IS NOT NULL AND (ein_key_version IS NULL OR ein_key_version < $1)`,
-    [CURRENT_KEY_VERSION],
+    [CURRENT_KEY_VERSION]
   );
 
   if (!rows.rowCount) {
-    console.log("[reencrypt] all EIN fields are up-to-date");
+    console.log('[reencrypt] all EIN fields are up-to-date');
     return;
   }
 
@@ -29,7 +34,7 @@ export async function reencryptImporterEins(): Promise<void> {
 
       await pool.query(
         `UPDATE importers SET ein_encrypted = $1, ein_key_version = $2 WHERE id = $3`,
-        [JSON.stringify(newValue), CURRENT_KEY_VERSION, row.id],
+        [JSON.stringify(newValue), CURRENT_KEY_VERSION, row.id]
       );
       updated++;
     } catch (err) {

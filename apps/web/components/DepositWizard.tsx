@@ -1,9 +1,9 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { api, ApiError, stroopsToXlm } from "@/lib/api";
+import { useState } from 'react';
+import { api, ApiError } from '@/lib/api';
 
-type Step = "amount" | "preview" | "confirm" | "receipt";
+type Step = 'amount' | 'preview' | 'confirm' | 'receipt';
 
 export function DepositWizard({
   importerId,
@@ -12,12 +12,12 @@ export function DepositWizard({
   setError,
 }: {
   importerId: string;
-  bucket: "collateral" | "reserve";
+  bucket: 'collateral' | 'reserve';
   onDone: () => Promise<void>;
   setError: (e: string | null) => void;
 }) {
-  const [step, setStep] = useState<Step>("amount");
-  const [xlm, setXlm] = useState("50");
+  const [step, setStep] = useState<Step>('amount');
+  const [xlm, setXlm] = useState('50');
   const [txHash, setTxHash] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -28,7 +28,7 @@ export function DepositWizard({
       const stroops = BigInt(Math.round(Number(xlm) * 1e7)).toString();
       const result = await api.deposit(importerId, { amountStroops: stroops, bucket });
       setTxHash(result.txHash);
-      setStep("receipt");
+      setStep('receipt');
       await onDone();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e));
@@ -36,11 +36,11 @@ export function DepositWizard({
     }
   }
 
-  const bucketLabel = bucket === "collateral" ? "Collateral" : "Reserve (auto-top-up pool)";
+  const bucketLabel = bucket === 'collateral' ? 'Collateral' : 'Reserve (auto-top-up pool)';
 
   return (
     <div className="space-y-4">
-      {step === "amount" && (
+      {step === 'amount' && (
         <>
           <div className="flex gap-2">
             <input
@@ -54,7 +54,7 @@ export function DepositWizard({
             />
           </div>
           <button
-            onClick={() => setStep("preview")}
+            onClick={() => setStep('preview')}
             className="w-full rounded-md bg-accent text-accent-foreground px-3 py-1.5 text-sm hover:opacity-90"
           >
             Next
@@ -62,7 +62,7 @@ export function DepositWizard({
         </>
       )}
 
-      {step === "preview" && (
+      {step === 'preview' && (
         <>
           <div className="rounded-lg border border-border bg-background p-3 text-sm">
             <p className="text-muted">Deposit amount</p>
@@ -71,13 +71,13 @@ export function DepositWizard({
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => setStep("amount")}
+              onClick={() => setStep('amount')}
               className="flex-1 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-card"
             >
               Back
             </button>
             <button
-              onClick={() => setStep("confirm")}
+              onClick={() => setStep('confirm')}
               className="flex-1 rounded-md bg-accent text-accent-foreground px-3 py-1.5 text-sm hover:opacity-90"
             >
               Confirm
@@ -86,17 +86,18 @@ export function DepositWizard({
         </>
       )}
 
-      {step === "confirm" && (
+      {step === 'confirm' && (
         <>
           <div className="rounded-lg border border-border bg-background p-3 text-sm">
             <p className="font-semibold">Ready to deposit?</p>
             <p className="mt-2 text-xs text-muted">
-              Sending {xlm} XLM to {bucketLabel.toLowerCase()}. This will be signed by your Stellar account.
+              Sending {xlm} XLM to {bucketLabel.toLowerCase()}. This will be signed by your Stellar
+              account.
             </p>
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => setStep("preview")}
+              onClick={() => setStep('preview')}
               className="flex-1 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-card"
             >
               Back
@@ -106,13 +107,13 @@ export function DepositWizard({
               disabled={busy}
               className="flex-1 rounded-md bg-success text-white px-3 py-1.5 text-sm hover:opacity-90 disabled:opacity-50"
             >
-              {busy ? "Depositing…" : "Deposit"}
+              {busy ? 'Depositing…' : 'Deposit'}
             </button>
           </div>
         </>
       )}
 
-      {step === "receipt" && (
+      {step === 'receipt' && (
         <>
           <div className="rounded-lg border border-success bg-success/10 p-3 text-sm">
             <p className="font-semibold text-success">✓ Deposit successful</p>
@@ -120,9 +121,7 @@ export function DepositWizard({
               {xlm} XLM deposited to {bucketLabel.toLowerCase()}
             </p>
             {txHash && (
-              <p className="mt-2 text-xs font-mono break-all text-accent">
-                {txHash.slice(0, 16)}…
-              </p>
+              <p className="mt-2 text-xs font-mono break-all text-accent">{txHash.slice(0, 16)}…</p>
             )}
           </div>
         </>

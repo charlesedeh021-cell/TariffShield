@@ -1,57 +1,54 @@
-import "./tracing.js";
-import "./instrument.js";
-import * as Sentry from "@sentry/node";
-import express, { type NextFunction, type Request, type Response } from "express";
-import { openApiSpec } from "./docs/openapi.js";
-import compression from "compression";
-import cors from "cors";
-import helmet from "helmet";
-import rateLimit from "express-rate-limit";
-import client from "prom-client";
-import { env, isProduction } from "./config/env.js";
-import { migrate } from "./db.js";
-import { authRouter } from "./routes/auth.js";
-import { importersRouter } from "./routes/importers.js";
-import { adminRouter } from "./routes/admin.js";
-import { privacyRouter } from "./routes/privacy.js";
-import { tosRouter } from "./routes/tos.js";
-import { bondSignaturesRouter, bondWebhookRouter } from "./routes/bond-signatures.js";
-import { startIndexer } from "./indexer.js";
-import { ping } from "./db.js";
-import { pingRpc } from "./stellar.js";
-import { startReconciliationJob } from "./jobs/reconcile-balances.js";
-import { startOracleMonitor } from "./services/oracle-monitor.js";
-import { startOracleEventListener } from "./services/oracle-event-listener.js";
-import { privacyReacceptanceGate } from "./auth.js";
-import { complianceRouter } from "./routes/compliance.js";
-import { kycRouter } from "./routes/kyc.js";
-import { startComplianceReportScheduler } from "./jobs/compliance-report.js";
-import { startImporterMetricsScheduler } from "./jobs/refresh-importer-metrics.js";
-import { startContractEventsPartitionScheduler } from "./jobs/ensure-contract-events-partitions.js";
-import { suretyLicenseRouter } from "./routes/surety-license.js";
-import { regulatoryRouter } from "./routes/regulatory.js";
-import { healthRouter } from "./routes/health.js";
-import { httpLogger, logger } from "./lib/logger.js";
-import { notificationsRouter } from "./routes/notifications.js";
+import './tracing.js';
+import './instrument.js';
+import * as Sentry from '@sentry/node';
+import express, { type NextFunction, type Request, type Response } from 'express';
+import { openApiSpec } from './docs/openapi.js';
+import compression from 'compression';
+import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import client from 'prom-client';
+import { env, isProduction } from './config/env.js';
+import { migrate } from './db.js';
+import { authRouter } from './routes/auth.js';
+import { importersRouter } from './routes/importers.js';
+import { adminRouter } from './routes/admin.js';
+import { privacyRouter } from './routes/privacy.js';
+import { tosRouter } from './routes/tos.js';
+import { bondSignaturesRouter, bondWebhookRouter } from './routes/bond-signatures.js';
+import { startIndexer } from './indexer.js';
+import { startReconciliationJob } from './jobs/reconcile-balances.js';
+import { startOracleMonitor } from './services/oracle-monitor.js';
+import { startOracleEventListener } from './services/oracle-event-listener.js';
+import { complianceRouter } from './routes/compliance.js';
+import { kycRouter } from './routes/kyc.js';
+import { startComplianceReportScheduler } from './jobs/compliance-report.js';
+import { startImporterMetricsScheduler } from './jobs/refresh-importer-metrics.js';
+import { startContractEventsPartitionScheduler } from './jobs/ensure-contract-events-partitions.js';
+import { suretyLicenseRouter } from './routes/surety-license.js';
+import { regulatoryRouter } from './routes/regulatory.js';
+import { healthRouter } from './routes/health.js';
+import { httpLogger, logger } from './lib/logger.js';
+import { notificationsRouter } from './routes/notifications.js';
 
 const app = express();
 app.use(httpLogger);
 
 export const httpRequestsTotal = new client.Counter({
-  name: "http_requests_total",
-  help: "Total number of HTTP requests processed",
-  labelNames: ["method", "route", "status_code"],
+  name: 'http_requests_total',
+  help: 'Total number of HTTP requests processed',
+  labelNames: ['method', 'route', 'status_code'],
 });
 
 export const httpRequestDurationSeconds = new client.Histogram({
-  name: "http_request_duration_seconds",
-  help: "Duration of HTTP requests in seconds",
-  labelNames: ["method", "route", "status_code"],
+  name: 'http_request_duration_seconds',
+  help: 'Duration of HTTP requests in seconds',
+  labelNames: ['method', 'route', 'status_code'],
   buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
 });
 
 function normalizeIp(ip: string): { version: 4 | 6; normalized: string } {
-  if (ip.startsWith("::ffff:")) {
+  if (ip.startsWith('::ffff:')) {
     const ipv4 = ip.substring(7);
     if (isIpv4(ipv4)) {
       return { version: 4, normalized: ipv4 };
@@ -64,7 +61,7 @@ function normalizeIp(ip: string): { version: 4 | 6; normalized: string } {
 }
 
 function isIpv4(ip: string): boolean {
-  const parts = ip.split(".");
+  const parts = ip.split('.');
   if (parts.length !== 4) return false;
   return parts.every((part) => {
     const num = parseInt(part, 10);
@@ -73,7 +70,7 @@ function isIpv4(ip: string): boolean {
 }
 
 function matchIpv4(ip: string, cidr: string): boolean {
-  const [range, bitsStr] = cidr.split("/");
+  const [range, bitsStr] = cidr.split('/');
   if (!range) return false;
   const bits = bitsStr ? parseInt(bitsStr, 10) : 32;
   if (!isIpv4(range) || bits < 0 || bits > 32) return false;
@@ -87,32 +84,32 @@ function matchIpv4(ip: string, cidr: string): boolean {
 }
 
 function ipv4ToInt(ip: string): number {
-  const parts = ip.split(".");
-  const p0 = parseInt(parts[0] || "0", 10);
-  const p1 = parseInt(parts[1] || "0", 10);
-  const p2 = parseInt(parts[2] || "0", 10);
-  const p3 = parseInt(parts[3] || "0", 10);
+  const parts = ip.split('.');
+  const p0 = parseInt(parts[0] || '0', 10);
+  const p1 = parseInt(parts[1] || '0', 10);
+  const p2 = parseInt(parts[2] || '0', 10);
+  const p3 = parseInt(parts[3] || '0', 10);
   return ((p0 << 24) | (p1 << 16) | (p2 << 8) | p3) >>> 0;
 }
 
 function parseIpv6(ip: string): number[] | null {
-  const parts = ip.split("::");
+  const parts = ip.split('::');
   if (parts.length > 2) return null;
 
-  const left = parts[0] ? parts[0].split(":") : [];
-  const right = parts[1] ? parts[1].split(":") : [];
+  const left = parts[0] ? parts[0].split(':') : [];
+  const right = parts[1] ? parts[1].split(':') : [];
 
   const missing = 8 - (left.length + right.length);
   if (missing < 0) return null;
 
-  const middle = new Array(missing).fill("0");
+  const middle = new Array(missing).fill('0');
   const hexParts = [...left, ...middle, ...right];
 
   if (hexParts.length !== 8) return null;
 
   const result: number[] = [];
   for (const part of hexParts) {
-    if (part === "") {
+    if (part === '') {
       result.push(0);
     } else {
       const val = parseInt(part, 16);
@@ -124,7 +121,7 @@ function parseIpv6(ip: string): number[] | null {
 }
 
 function matchIpv6(ip: string, cidr: string): boolean {
-  const [range, bitsStr] = cidr.split("/");
+  const [range, bitsStr] = cidr.split('/');
   if (!range) return false;
   const bits = bitsStr ? parseInt(bitsStr, 10) : 128;
 
@@ -154,10 +151,10 @@ function matchIpv6(ip: string, cidr: string): boolean {
 function isIpAllowed(clientIp: string, allowedCidr?: string): boolean {
   const { version, normalized } = normalizeIp(clientIp.trim());
 
-  if (version === 4 && normalized === "127.0.0.1") {
+  if (version === 4 && normalized === '127.0.0.1') {
     return true;
   }
-  if (version === 6 && (normalized === "::1" || normalized === "0:0:0:0:0:0:0:1")) {
+  if (version === 6 && (normalized === '::1' || normalized === '0:0:0:0:0:0:0:1')) {
     return true;
   }
 
@@ -165,10 +162,13 @@ function isIpAllowed(clientIp: string, allowedCidr?: string): boolean {
     return false;
   }
 
-  const cidrs = allowedCidr.split(",").map((c) => c.trim()).filter(Boolean);
+  const cidrs = allowedCidr
+    .split(',')
+    .map((c) => c.trim())
+    .filter(Boolean);
 
   return cidrs.some((cidr) => {
-    const [range] = cidr.split("/");
+    const [range] = cidr.split('/');
     if (!range) return false;
     const rangeNormal = normalizeIp(range);
 
@@ -187,25 +187,25 @@ function isIpAllowed(clientIp: string, allowedCidr?: string): boolean {
 function metricsIpGuard(req: Request, res: Response, next: NextFunction) {
   const clientIp = req.ip;
   if (!clientIp) {
-    res.status(403).json({ error: "Access Denied: No client IP detected" });
+    res.status(403).json({ error: 'Access Denied: No client IP detected' });
     return;
   }
 
   if (isIpAllowed(clientIp, env.METRICS_ALLOWED_CIDR)) {
     next();
   } else {
-    res.status(403).json({ error: "Access Denied: Client IP not allowed" });
+    res.status(403).json({ error: 'Access Denied: Client IP not allowed' });
   }
 }
 
 function httpMetricsMiddleware(req: Request, res: Response, next: NextFunction) {
   const start = process.hrtime();
 
-  res.on("finish", () => {
+  res.on('finish', () => {
     const diff = process.hrtime(start);
     const durationSeconds = diff[0] + diff[1] / 1e9;
 
-    const route = req.route ? `${req.baseUrl}${(req as any).route.path}` : "not_found";
+    const route = req.route ? `${req.baseUrl}${(req as any).route.path}` : 'not_found';
     const method = req.method;
     const statusCode = String(res.statusCode);
 
@@ -218,18 +218,20 @@ function httpMetricsMiddleware(req: Request, res: Response, next: NextFunction) 
 
 app.use(httpMetricsMiddleware);
 
-app.set("trust proxy", 1);
+app.set('trust proxy', 1);
 app.use(
   helmet({
     contentSecurityPolicy: false,
-    crossOriginResourcePolicy: { policy: "cross-origin" },
-  }),
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  })
 );
 app.use(compression());
 
 const ALLOWED_ORIGINS = (() => {
-  const set = new Set<string>(["http://localhost:3000", "http://127.0.0.1:3000"]);
-  for (const o of env.FRONTEND_ORIGIN.split(",").map((s) => s.trim()).filter(Boolean)) {
+  const set = new Set<string>(['http://localhost:3000', 'http://127.0.0.1:3000']);
+  for (const o of env.FRONTEND_ORIGIN.split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)) {
     set.add(o);
   }
   return set;
@@ -243,41 +245,41 @@ app.use(
       cb(null, false);
     },
     credentials: false,
-  }),
+  })
 );
 
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: '1mb' }));
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: "too many auth attempts; try again in 15 minutes" },
+  message: { error: 'too many auth attempts; try again in 15 minutes' },
 });
 
-app.use("/health", healthRouter);
+app.use('/health', healthRouter);
 
 client.collectDefaultMetrics();
 
-app.get("/metrics", metricsIpGuard, async (_req, res) => {
+app.get('/metrics', metricsIpGuard, async (_req, res) => {
   try {
-    res.set("Content-Type", "text/plain; version=0.0.4");
+    res.set('Content-Type', 'text/plain; version=0.0.4');
     res.end(await client.register.metrics());
   } catch (err: any) {
-    res.status(500).end(err?.message || "Internal Metrics Error");
+    res.status(500).end(err?.message || 'Internal Metrics Error');
   }
 });
 
 // ── OpenAPI spec + Swagger UI (issue #286) ────────────────────────────────
 
-app.get("/docs/openapi.json", (_req, res) => {
+app.get('/docs/openapi.json', (_req, res) => {
   res.json(openApiSpec);
 });
 
-app.get("/docs", (_req, res) => {
-  const specUrl = "/docs/openapi.json";
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
+app.get('/docs', (_req, res) => {
+  const specUrl = '/docs/openapi.json';
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -305,31 +307,31 @@ app.get("/docs", (_req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-app.use("/auth/signup", authLimiter);
-app.use("/auth/login", authLimiter);
-app.use("/auth", authRouter);
-app.use("/importers", importersRouter);
-app.use("/importers", kycRouter);
-app.use("/compliance", complianceRouter);
-app.use("/admin", adminRouter);
-app.use("/account", privacyRouter);
-app.use("/account", tosRouter);
-app.use("/privacy", privacyRouter);
-app.use("/surety-license", suretyLicenseRouter);
-app.use("/notifications", notificationsRouter);
-app.use("/api/v1/regulatory", regulatoryRouter);
-app.use("/bonds", bondWebhookRouter);   // unauthenticated DocuSign webhook
-app.use("/api", bondSignaturesRouter);  // authenticated bond signature routes
+app.use('/auth/signup', authLimiter);
+app.use('/auth/login', authLimiter);
+app.use('/auth', authRouter);
+app.use('/importers', importersRouter);
+app.use('/importers', kycRouter);
+app.use('/compliance', complianceRouter);
+app.use('/admin', adminRouter);
+app.use('/account', privacyRouter);
+app.use('/account', tosRouter);
+app.use('/privacy', privacyRouter);
+app.use('/surety-license', suretyLicenseRouter);
+app.use('/notifications', notificationsRouter);
+app.use('/api/v1/regulatory', regulatoryRouter);
+app.use('/bonds', bondWebhookRouter); // unauthenticated DocuSign webhook
+app.use('/api', bondSignaturesRouter); // authenticated bond signature routes
 
 Sentry.setupExpressErrorHandler(app);
 
 app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
   if (req.log) {
-    req.log.error({ err }, "internal error");
+    req.log.error({ err }, 'internal error');
   } else {
-    logger.error({ err }, "internal error");
+    logger.error({ err }, 'internal error');
   }
-  res.status(500).json({ error: err.message || "internal error" });
+  res.status(500).json({ error: err.message || 'internal error' });
 });
 
 async function start() {
@@ -344,11 +346,18 @@ async function start() {
   startImporterMetricsScheduler();
   startContractEventsPartitionScheduler();
   app.listen(env.PORT, () => {
-    logger.info({ port: env.PORT, contractId: env.TARIFF_SHIELD_CONTRACT_ID, corsAllowlist: Array.from(ALLOWED_ORIGINS) }, "tariffshield API server started");
+    logger.info(
+      {
+        port: env.PORT,
+        contractId: env.TARIFF_SHIELD_CONTRACT_ID,
+        corsAllowlist: Array.from(ALLOWED_ORIGINS),
+      },
+      'tariffshield API server started'
+    );
   });
 }
 
 start().catch((err) => {
-  logger.fatal({ err }, "fatal server boot error");
+  logger.fatal({ err }, 'fatal server boot error');
   process.exit(1);
 });

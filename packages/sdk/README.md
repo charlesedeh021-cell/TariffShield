@@ -21,12 +21,12 @@ npm install stellar-sdk
 Initialize the client with your network details:
 
 ```typescript
-import { TariffShieldClient } from "@tariffshield/sdk";
+import { TariffShieldClient } from '@tariffshield/sdk';
 
 const client = new TariffShieldClient({
-  rpcUrl: "https://soroban-testnet.stellar.org",
-  contractId: "CBLASRVG7NRAFP2CDPVSF4WTJBKC6L4FKT2XHR3OH7CLICUBPVQ4PBBF",
-  networkPassphrase: "Test SDF Network ; September 2015",
+  rpcUrl: 'https://soroban-testnet.stellar.org',
+  contractId: 'CBLASRVG7NRAFP2CDPVSF4WTJBKC6L4FKT2XHR3OH7CLICUBPVQ4PBBF',
+  networkPassphrase: 'Test SDF Network ; September 2015',
 });
 ```
 
@@ -35,6 +35,7 @@ const client = new TariffShieldClient({
 ### Read Methods
 
 #### `getAccount(importerAddress: string)`
+
 Returns the on-chain state for a specific importer.
 
 - **Parameters**: `importerAddress` (Stellar public key)
@@ -45,14 +46,16 @@ Returns the on-chain state for a specific importer.
 Write methods require a signing `Keypair` and return the transaction hash along with any decoded result.
 
 #### `autoTopUp(signer: Keypair, importerAddress: string)`
+
 Permissionlessly moves funds from the reserve to the collateral balance if the importer is under-collateralized.
 
-- **Parameters**: 
+- **Parameters**:
   - `signer`: Any valid Stellar Keypair
   - `importerAddress`: Target importer public key
 - **Returns**: `Promise<{ txHash: string, movedStroops: string }>`
 
 #### `clawback(suretySigner: Keypair, importerAddress: string)`
+
 Surety admin action to seize collateral and reserve funds, freezing the account.
 
 - **Parameters**:
@@ -60,7 +63,7 @@ Surety admin action to seize collateral and reserve funds, freezing the account.
   - `importerAddress`: Target importer public key
 - **Returns**: `Promise<{ txHash: string, clawedStroops: string }>`
 
-*(See source for full list of methods including `initialize`, `registerImporter`, `depositCollateral`, `depositReserve`, `setRequiredCollateral`, `withdrawCollateral`, `accrueYield`)*
+_(See source for full list of methods including `initialize`, `registerImporter`, `depositCollateral`, `depositReserve`, `setRequiredCollateral`, `withdrawCollateral`, `accrueYield`)_
 
 ## Types
 
@@ -105,6 +108,7 @@ console.log(`Moved ${result.movedStroops} stroops to collateral in tx ${result.t
 ## Smoke Test
 
 You can verify the SDK is configured correctly by running the read-only smoke test script:
+
 ```bash
 npx tsx scripts/sdk-smoke.ts
 ```

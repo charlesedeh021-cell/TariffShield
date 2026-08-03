@@ -1,7 +1,11 @@
-"use client";
+'use client';
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { YieldProjectionRequest, YieldProjectionResponse, YieldWorkerMessage } from "./yieldWorker.types";
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type {
+  YieldProjectionRequest,
+  YieldProjectionResponse,
+  YieldWorkerMessage,
+} from './yieldWorker.types';
 
 export interface UseYieldProjection {
   result: YieldProjectionResponse | null;
@@ -23,7 +27,7 @@ export function useYieldProjection(): UseYieldProjection {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const worker = new Worker(new URL("./yieldWorker.ts", import.meta.url));
+    const worker = new Worker(new URL('./yieldWorker.ts', import.meta.url));
     workerRef.current = worker;
 
     worker.onmessage = (event: MessageEvent<YieldWorkerMessage>) => {
@@ -38,7 +42,7 @@ export function useYieldProjection(): UseYieldProjection {
 
     worker.onerror = (event) => {
       setLoading(false);
-      setError(event.message || "yield projection worker crashed");
+      setError(event.message || 'yield projection worker crashed');
     };
 
     return () => {

@@ -1,17 +1,17 @@
-import { pino } from "pino";
-import client from "prom-client";
-import * as Sentry from "@sentry/node";
-import { getCurrentLedgerSequence } from "./stellar.js";
-import { getLastProcessedLedger, updateLastProcessedLedger } from "./db.js";
+import { pino } from 'pino';
+import client from 'prom-client';
+import * as Sentry from '@sentry/node';
+import { getCurrentLedgerSequence } from './stellar.js';
+import { getLastProcessedLedger, updateLastProcessedLedger } from './db.js';
 
 export const logger = pino({
-  level: process.env.LOG_LEVEL || "info",
+  level: process.env.LOG_LEVEL || 'info',
 });
 
 // Initialize Prometheus gauge for indexer lag
 export const indexerLagGauge = new client.Gauge({
-  name: "contract_event_indexer_lag_ledgers",
-  help: "Difference between the latest ledger sequence on-chain and the last processed ledger by the indexer",
+  name: 'contract_event_indexer_lag_ledgers',
+  help: 'Difference between the latest ledger sequence on-chain and the last processed ledger by the indexer',
 });
 
 let intervalId: NodeJS.Timeout | null = null;
@@ -22,17 +22,17 @@ let intervalId: NodeJS.Timeout | null = null;
  */
 export async function startIndexer(): Promise<void> {
   if (intervalId) {
-    logger.warn("Indexer background worker is already running");
+    logger.warn('Indexer background worker is already running');
     return;
   }
 
-  logger.info("[indexer] Starting background event indexer monitor...");
+  logger.info('[indexer] Starting background event indexer monitor...');
 
   // Run the first check immediately
   try {
     await checkLagAndIndex();
   } catch (err) {
-    logger.error({ err }, "[indexer] First check failed");
+    logger.error({ err }, '[indexer] First check failed');
     Sentry.captureException(err);
   }
 
@@ -41,7 +41,7 @@ export async function startIndexer(): Promise<void> {
     try {
       await checkLagAndIndex();
     } catch (err) {
-      logger.error({ err }, "[indexer] Error in contract event indexer monitoring cycle");
+      logger.error({ err }, '[indexer] Error in contract event indexer monitoring cycle');
       Sentry.captureException(err);
     }
   }, 30000);
@@ -54,7 +54,7 @@ export function stopIndexer(): void {
   if (intervalId) {
     clearInterval(intervalId);
     intervalId = null;
-    logger.info("[indexer] Stopped background event indexer monitor");
+    logger.info('[indexer] Stopped background event indexer monitor');
   }
 }
 
@@ -74,7 +74,10 @@ async function checkLagAndIndex(): Promise<void> {
   if (lastProcessed === null) {
     lastProcessed = currentLedger;
     await updateLastProcessedLedger(lastProcessed);
-    logger.info({ lastProcessedLedger: lastProcessed }, "[indexer] Initialized last_processed_ledger in database");
+    logger.info(
+      { lastProcessedLedger: lastProcessed },
+      '[indexer] Initialized last_processed_ledger in database'
+    );
   }
 
   const lag = currentLedger - lastProcessed;
@@ -86,25 +89,25 @@ async function checkLagAndIndex(): Promise<void> {
   if (lag > 10) {
     logger.error(
       { lagLedgers: lag, lastProcessedLedger: lastProcessed, currentLedger },
-      "Indexer lag exceeds critical threshold (> 10 blocks)"
+      'Indexer lag exceeds critical threshold (> 10 blocks)'
     );
   } else if (lag > 5) {
     logger.warn(
       { lagLedgers: lag, lastProcessedLedger: lastProcessed, currentLedger },
-      "Indexer lag exceeds warning threshold (> 5 blocks)"
+      'Indexer lag exceeds warning threshold (> 5 blocks)'
     );
   } else {
     logger.debug(
       { lagLedgers: lag, lastProcessedLedger: lastProcessed, currentLedger },
-      "Indexer lag is within normal limits"
+      'Indexer lag is within normal limits'
     );
   }
 
   // Update last processed sequence in the DB if not stalled
-  if (process.env.INDEXER_STALL === "true") {
+  if (process.env.INDEXER_STALL === 'true') {
     logger.warn(
       { lagLedgers: lag, lastProcessedLedger: lastProcessed, currentLedger },
-      "[indexer] Indexer stall simulated (INDEXER_STALL=true). Skipping ledger progression update."
+      '[indexer] Indexer stall simulated (INDEXER_STALL=true). Skipping ledger progression update.'
     );
   } else {
     await updateLastProcessedLedger(currentLedger);
