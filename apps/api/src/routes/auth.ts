@@ -385,8 +385,12 @@ authRouter.post('/saml/:provider/callback', async (req: Request, res: Response) 
 
   // Extract NameID and email from assertion attributes
   const nameIdMatch = decoded.match(/<(?:saml:|)NameID[^>]*>([^<]+)<\/(?:saml:|)NameID>/);
+  // `[^>]*` already matches whitespace, so a `\s*` directly in front of it is
+  // redundant and ambiguous — the two quantifiers can split a run of spaces
+  // in exponentially many ways, which is a polynomial/catastrophic
+  // backtracking hazard on attacker-controlled SAMLResponse XML.
   const emailMatch = decoded.match(
-    /Name="(?:email|mail|emailAddress)[^"]*"\s*[^>]*>\s*<(?:saml:|)AttributeValue[^>]*>([^<]+)<\/(?:saml:|)AttributeValue>/i
+    /Name="(?:email|mail|emailAddress)[^"]*"[^>]*>\s*<(?:saml:|)AttributeValue[^>]*>([^<]+)<\/(?:saml:|)AttributeValue>/i
   );
 
   const nameId = nameIdMatch?.[1]?.trim();

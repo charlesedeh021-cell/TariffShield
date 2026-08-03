@@ -43,6 +43,12 @@ jobs:
       - name: Type check SDK
         run: npx tsc --noEmit -p packages/sdk/tsconfig.json
 
+      - name: Build SDK
+        # apps/api imports @tariffshield/sdk via its built dist/index.d.ts
+        # (see packages/sdk/package.json "types"), not its source directly,
+        # so the API type check below needs it built first.
+        run: npm run build --workspace=packages/sdk
+
       - name: Type check API
         run: npx tsc --noEmit -p apps/api/tsconfig.json
 
