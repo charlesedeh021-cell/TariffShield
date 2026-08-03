@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import {
   pool,
@@ -26,6 +27,18 @@ import { env } from '../config/env.js';
 import { createHash, randomBytes } from 'crypto';
 
 export const authRouter = Router();
+
+// Looser than the signup/login limiter applied in index.ts: these routes
+// require an already-valid session (authMiddleware), so they aren't
+// credential-guessing targets the way signup/login are, but still
+// shouldn't be uncapped.
+const sessionLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'too many requests; try again shortly' },
+});
 
 const REFRESH_TOKEN_EXPIRY_DAYS = 30;
 
@@ -208,7 +221,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
   });
 });
 
-authRouter.post('/logout', authMiddleware, async (req: Request, res: Response) => {
+authRouter.post('/logout', sessionLimiter, authMiddleware, async (req: Request, res: Response) => {
   const { sessionId } = (req as AuthedRequest).user;
   if (sessionId) {
     await revokeSession(sessionId);
@@ -271,7 +284,7 @@ authRouter.post('/refresh', async (req: Request, res: Response) => {
   res.json({ token: accessToken, refreshToken: newRefreshToken });
 });
 
-authRouter.get('/me', authMiddleware, (req: Request, res: Response) => {
+authRouter.get('/me', sessionLimiter, authMiddleware, (req: Request, res: Response) => {
   res.json({ user: (req as AuthedRequest).user });
 });
 
@@ -380,6 +393,18 @@ authRouter.post('/saml/:provider/callback', async (req: Request, res: Response) 
     decoded = Buffer.from(samlResponse, 'base64').toString('utf8');
   } catch {
     res.status(400).json({ error: 'malformed SAMLResponse' });
+    return;
+  }
+
+  // Bound the input to the regexes below before they see it. A real SAML
+  // assertion (including an embedded signing certificate) is a few KB;
+  // 50 KB is generous headroom. Without a cap, an attacker can pick
+  // decoded's length freely, and matching against unbounded attacker-
+  // controlled input is itself the "uncontrolled data" half of a ReDoS —
+  // no fixed regex rewrite closes that off on its own.
+  const MAX_SAML_RESPONSE_LENGTH = 50_000;
+  if (decoded.length > MAX_SAML_RESPONSE_LENGTH) {
+    res.status(400).json({ error: 'SAMLResponse too large' });
     return;
   }
 

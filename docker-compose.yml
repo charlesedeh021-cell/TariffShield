@@ -33,8 +33,11 @@ services:
 
   api:
     build:
-      context: apps/api
-      dockerfile: Dockerfile
+      # Both Dockerfiles COPY sibling workspace packages (packages/sdk, the
+      # root package.json/package-lock.json) that only exist relative to the
+      # repo root, so the build context has to be the root, not the app dir.
+      context: .
+      dockerfile: apps/api/Dockerfile
     container_name: tariffshield-api
     depends_on:
       postgres:
@@ -58,8 +61,8 @@ services:
 
   web:
     build:
-      context: apps/web
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/web/Dockerfile
     container_name: tariffshield-web
     depends_on:
       api:

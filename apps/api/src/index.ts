@@ -258,17 +258,6 @@ const authLimiter = rateLimit({
   message: { error: 'too many auth attempts; try again in 15 minutes' },
 });
 
-// Looser than authLimiter: these routes require an already-valid session
-// (authMiddleware), so they aren't credential-guessing targets the way
-// signup/login are, but still shouldn't be uncapped.
-const sessionLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'too many requests; try again shortly' },
-});
-
 app.use('/health', healthRouter);
 
 client.collectDefaultMetrics();
@@ -320,8 +309,6 @@ app.get('/docs', (_req, res) => {
 
 app.use('/auth/signup', authLimiter);
 app.use('/auth/login', authLimiter);
-app.use('/auth/logout', sessionLimiter);
-app.use('/auth/me', sessionLimiter);
 app.use('/auth', authRouter);
 app.use('/importers', importersRouter);
 app.use('/importers', kycRouter);
