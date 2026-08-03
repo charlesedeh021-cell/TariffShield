@@ -16,7 +16,11 @@ function stub(name: string, value: string) {
   if (!process.env[name]) process.env[name] = value;
 }
 
-stub('DATABASE_URL', 'postgres://fake:fake@localhost:1/fake');
+// Unconditional, unlike stub() below: this whole file tests behavior against
+// an unreachable database, so it must win even when the CI job already sets
+// a real (reachable) DATABASE_URL at the job level for the other test files
+// in this suite that need it.
+process.env.DATABASE_URL = 'postgres://fake:fake@localhost:1/fake';
 stub('JWT_SECRET', 'test-stub-jwt-secret-not-used-by-this-suite-00000');
 stub('STELLAR_RPC_URL', 'https://soroban-testnet.stellar.org');
 stub('STELLAR_HORIZON_URL', 'https://horizon-testnet.stellar.org');

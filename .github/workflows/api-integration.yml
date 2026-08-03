@@ -48,6 +48,12 @@ jobs:
 
       - run: npm ci
 
+      - name: Build SDK
+        # apps/api's src/stellar.ts imports @tariffshield/sdk via its built
+        # dist/index.js (see packages/sdk/package.json "main"/"types"), so
+        # it has to be built before anything imports apps/api's source.
+        run: npm run build --workspace=packages/sdk
+
       - name: Run database migrations
         run: npm run db:migrate --workspace=apps/api
 
