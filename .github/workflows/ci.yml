@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main, master]
 
+# Least-privilege default: no job (including sentry-upload, which only
+# builds and uploads sourcemaps using a Sentry auth token) needs to write to
+# the repo, so the default GITHUB_TOKEN is scoped to read-only.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: test
