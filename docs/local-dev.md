@@ -32,9 +32,8 @@ Before you begin, ensure you have the following installed:
 
 3. Copy the example environment file for the Web application:
    ```bash
-   cp apps/web/.env.local.example apps/web/.env.local
+   cp apps/web/.env.example apps/web/.env.local
    ```
-   *(Create one if it doesn't exist using the keys from `ARCHITECTURE.md`)*
 
 ## Local Database
 
