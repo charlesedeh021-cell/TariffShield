@@ -12,6 +12,18 @@ on:
 permissions:
   contents: read
 
+# Grouped per-ref so an in-flight run is cancelled by a newer push to the
+# same branch. This matters for sentry-upload in particular: it runs only on
+# main and uploads sourcemaps for the checked-out commit, so if two merges
+# to main land in quick succession, letting both runs finish can let the
+# older commit's sourcemaps land in Sentry after the newer commit's,
+# desyncing stack traces from source. Scoping by github.ref keeps
+# PR-triggered runs on different branches in separate groups, unaffected by
+# this cancellation.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: test
