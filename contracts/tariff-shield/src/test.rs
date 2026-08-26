@@ -4,12 +4,16 @@
 // rather than clippy's uniform 3-digit grouping.
 #![allow(clippy::inconsistent_digit_grouping)]
 
+extern crate std;
+
 use super::*;
 use soroban_sdk::{
+    xdr::ToXdr,
     testutils::{Address as _, Ledger},
     token::{StellarAssetClient, TokenClient},
     Env, IntoVal,
 };
+use std::time::Instant;
 
 struct Setup<'a> {
     env: Env,
@@ -892,4 +896,138 @@ fn non_admin_cannot_transfer_admin() {
     }]);
 
     client.transfer_admin(&intruder);
+}
+
+fn benchmark_importer_batch(count: usize, action: impl Fn(&Setup<'_>, &Address)) -> (u128, u64, u64) {
+    let s = setup();
+    let mut importers = std::vec::Vec::with_capacity(count);
+    for _ in 0..count {
+        importers.push(Address::generate(&s.env));
+    }
+
+    for (i, importer) in importers.iter().enumerate() {
+        s.client
+            .register_importer(importer, &(10_000 + i as u64), &100_000_0000000);
+        s.client
+            .deposit_collateral(importer, &s.funder, &10_000_0000);
+        s.client
+            .deposit_reserve(importer, &s.funder, &10_000_0000);
+    }
+
+    let mut budget = s.env.cost_estimate().budget();
+    budget.reset_unlimited();
+    budget.reset_tracker();
+
+    let start = Instant::now();
+    for importer in &importers {
+        action(&s, importer);
+    }
+    let elapsed_ns = start.elapsed().as_nanos();
+    (
+        elapsed_ns,
+        budget.cpu_instruction_cost(),
+        budget.memory_bytes_cost(),
+    )
+}
+
+#[test]
+fn benchmark_bulk_enforcement_paths() {
+    let clawback_one = benchmark_importer_batch(1, |s, importer| {
+        let _ = s.client.clawback(importer);
+    });
+    let clawback_100 = benchmark_importer_batch(100, |s, importer| {
+        let _ = s.client.clawback(importer);
+    });
+    let clawback_1000 = benchmark_importer_batch(1000, |s, importer| {
+        let _ = s.client.clawback(importer);
+    });
+
+    let stale_100 = benchmark_importer_batch(100, |s, importer| {
+        let _ = s.client.is_collateral_stale(importer);
+    });
+    let stale_1000 = benchmark_importer_batch(1000, |s, importer| {
+        let _ = s.client.is_collateral_stale(importer);
+    });
+
+    let s = setup();
+    let mut history_stats = std::vec::Vec::new();
+    for entry_count in [10usize, 100, 1000] {
+        let importer = Address::generate(&s.env);
+        s.client
+            .register_importer(&importer, &((entry_count as u64) + 20_000), &100_000_0000000);
+        for i in 0..entry_count {
+            s.env.ledger().with_mut(|li| {
+                li.timestamp = 1_000_000 + i as u64;
+            });
+            s.client.set_required_collateral(
+                &s.emergency_oracle_admin,
+                &importer,
+                &((100_000_0000000i128) + (i as i128) * 1_000_0000),
+                &None,
+                &false,
+                &true,
+            );
+        }
+        let mut budget = s.env.cost_estimate().budget();
+        budget.reset_unlimited();
+        budget.reset_tracker();
+        let start = Instant::now();
+        let history = s.client.get_collateral_history(&importer);
+        let encoded = history.to_xdr(&s.env);
+        let elapsed_ns = start.elapsed().as_nanos();
+        history_stats.push((
+            entry_count as u64,
+            elapsed_ns,
+            budget.cpu_instruction_cost(),
+            budget.memory_bytes_cost(),
+            encoded.len() as u64,
+        ));
+    }
+
+    let mut signer_stats = std::vec::Vec::new();
+    for signer_count in [3usize, 5, 7] {
+        let mut current_signers = soroban_sdk::Vec::new(&s.env);
+        for _ in 0..signer_count {
+            current_signers.push_back(Address::generate(&s.env));
+        }
+        s.env
+            .storage()
+            .instance()
+            .set(&DataKey::OracleSigners, &current_signers);
+        s.env
+            .storage()
+            .instance()
+            .set(&DataKey::OracleThreshold, &2u32);
+
+        let mut new_signers = soroban_sdk::Vec::new(&s.env);
+        for _ in 0..3 {
+            new_signers.push_back(Address::generate(&s.env));
+        }
+        let approvals = current_signers.clone();
+        let mut budget = s.env.cost_estimate().budget();
+        budget.reset_unlimited();
+        budget.reset_tracker();
+        let start = Instant::now();
+        s.client
+            .update_oracle_signers(&new_signers, &approvals);
+        let elapsed_ns = start.elapsed().as_nanos();
+        signer_stats.push((
+            signer_count as u64,
+            elapsed_ns,
+            budget.cpu_instruction_cost(),
+            budget.memory_bytes_cost(),
+        ));
+    }
+
+    std::println!(
+        "clawback: 1={:?} 100={:?} 1000={:?}",
+        clawback_one, clawback_100, clawback_1000
+    );
+    std::println!("stale: 100={:?} 1000={:?}", stale_100, stale_1000);
+    std::println!("history: {:?}", history_stats);
+    std::println!("signers: {:?}", signer_stats);
+
+    assert!(clawback_100.0 >= clawback_one.0);
+    assert!(clawback_1000.0 >= clawback_100.0);
+    assert!(stale_1000.0 >= stale_100.0);
 }
