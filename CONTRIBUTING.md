@@ -52,7 +52,7 @@ See [docs/local-dev.md](docs/local-dev.md) for troubleshooting local environment
 
 - **TypeScript** (`apps/api`, `apps/web`, `packages/sdk`): `strict` mode is enabled in every `tsconfig.json` — do not disable it or add `any` to work around a type error. Follow the existing import order (external packages, then internal `@tariffshield/*` / relative imports). Run before pushing:
   ```bash
-  npm run typecheck --workspace=apps/web
+  npm run typecheck                      # runs typecheck in every workspace that defines it
   npm run lint --workspace=apps/api      # eslint --max-warnings 0
   npm run lint --workspace=apps/web
   npm run format:check --workspace=apps/api
