@@ -7,6 +7,12 @@ on:
   pull_request:
     branches: [main, master]
 
+# Least-privilege token: only what checkout and posting/updating the PR
+# comment require. No broader scopes are granted.
+permissions:
+  pull-requests: write
+  contents: read
+
 jobs:
   benchmark:
     name: k6-benchmark
@@ -106,7 +112,10 @@ jobs:
 
       - name: Post results as PR comment
         if: always()
-        uses: peter-evans/create-or-update-comment@v4
+        # Pinned: peter-evans/create-or-update-comment v4.0.0. Full commit
+        # SHA instead of the mutable @v4 tag; Dependabot tracks updates via
+        # .github/dependabot.yml.
+        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4.0.0
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body-path: benchmark-comment.md
