@@ -1,9 +1,11 @@
 import fs from "fs";
 import path from "path";
-import { globSync } from "glob"; // we might not have glob installed, but we can use fs.readdirSync recursively or just hardcode apps/*
-// Wait, the issue says: `discovers all .env.example files under apps/ automatically (no hardcoded paths) using a glob pattern`
 
 import { parse } from "dotenv";
+
+// Discovers .env.example files by walking apps/ recursively rather than
+// relying on a glob pattern, so no hardcoded per-app paths need updating
+// as workspaces are added or removed.
 
 function findEnvExamples(dir: string): string[] {
   let results: string[] = [];

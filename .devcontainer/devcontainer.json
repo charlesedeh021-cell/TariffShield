@@ -16,7 +16,10 @@
     "RUSTUP_HOME": "/usr/local/rustup"
   },
   "forwardPorts": [3000, 3002, 4000, 5432, 5443],
-  "postCreateCommand": "cargo install --locked stellar-cli@22.0.0 --features opt && npm install && cp .env.example .env && cp apps/api/.env.example apps/api/.env && cp apps/web/.env.example apps/web/.env && docker compose up -d",
+  // apps/api is a Node process (tsx/node) that reads plain .env via dotenv,
+  // but apps/web is a Next.js app — Next only auto-loads .env.local (and
+  // .env.development) for local dev, so NEXT_PUBLIC_* vars need .env.local.
+  "postCreateCommand": "cargo install --locked stellar-cli@22.0.0 --features opt && npm install && cp .env.example .env && cp apps/api/.env.example apps/api/.env && cp apps/web/.env.example apps/web/.env.local && docker compose up -d",
   "customizations": {
     "vscode": {
       "extensions": [
