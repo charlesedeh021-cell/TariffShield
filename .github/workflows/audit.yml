@@ -13,10 +13,30 @@ permissions:
   issues: write
   contents: read
 
+# One run per workflow + ref:
+#   - pull_request runs use their own merge ref, so every PR audits
+#     independently of the cron and of other PRs.
+#   - schedule and workflow_dispatch on the same branch share a group, so a
+#     manually-triggered run can no longer overlap the daily cron and both
+#     post duplicate scheduled-failure issues.
+# cancel-in-progress policy: only an incoming *scheduled* run cancels
+# whatever is already running in its group — the daily audit must always run
+# to completion since it owns failure reporting. PR/manual runs instead queue
+# behind whatever is in progress rather than cancelling it (a queued manual
+# run never posts issues, so nothing is duplicated and no alert is lost).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'schedule' }}
+
 jobs:
   audit:
     name: Dependency & License Audit
     runs-on: ubuntu-latest
+    # Hard cap well under the 360-minute runner default: a hung cargo
+    # install or registry outage fails within 15 minutes instead of holding
+    # the runner. Normal runs complete far inside this bound; a breach fails
+    # the job and the scheduled run reports it via its usual issue step.
+    timeout-minutes: 15
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
