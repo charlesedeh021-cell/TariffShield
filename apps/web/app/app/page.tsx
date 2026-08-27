@@ -22,6 +22,8 @@ import { Nav } from '@/components/Nav';
 import { HealthScore } from '@/components/HealthScore';
 import { DepositWizard } from '@/components/DepositWizard';
 import { BondTimeline } from '@/components/BondTimeline';
+import { DashboardSkeleton } from '@/components/DashboardSkeleton';
+import { Spinner } from '@/components/Spinner';
 import {
   api,
   ApiError,
@@ -134,9 +136,7 @@ function ImporterDashboard() {
     return (
       <>
         <Nav />
-        <main className="max-w-4xl mx-auto px-6 py-10">
-          <p className="text-muted">Loading…</p>
-        </main>
+        <DashboardSkeleton />
       </>
     );
   }
@@ -202,7 +202,14 @@ function ImporterDashboard() {
             <ActionCard
               title="Update tariff exposure"
               description="Re-run required collateral from annual duty estimate. Demo computes required = annual_duty × 10% × 50%."
-              action={<TariffForm importerId={importer.id} onDone={refresh} setError={setError} />}
+              action={
+                <TariffForm
+                  importerId={importer.id}
+                  currentRequiredStroops={required.toString()}
+                  onDone={refresh}
+                  setError={setError}
+                />
+              }
               busy={busy === 'tariff'}
             />
             <ActionCard
@@ -629,15 +636,32 @@ function ActionCard({
 
 function TariffForm({
   importerId,
+  currentRequiredStroops,
   onDone,
   setError,
 }: {
   importerId: string;
+  currentRequiredStroops: string;
   onDone: () => Promise<void>;
   setError: (e: string | null) => void;
 }) {
   const [duty, setDuty] = useState('5000000');
   const [busy, setBusy] = useState(false);
+
+  // Mirror of the server-side / documented formula: required = annual_duty × 10% × 50%,
+  // scaled to stroops (1 XLM = 1e7). Recomputed live as the duty input changes so the
+  // importer sees the resulting requirement before committing the on-chain update.
+  const preview = useMemo(() => {
+    const d = Number(duty);
+    if (!Number.isFinite(d) || d <= 0) return null;
+    const nextStroops = BigInt(Math.round(d * 0.05 * 1e7));
+    const currentStroops = BigInt(currentRequiredStroops);
+    return {
+      nextStroops,
+      deltaStroops: nextStroops - currentStroops,
+    };
+  }, [duty, currentRequiredStroops]);
+
   async function go() {
     setBusy(true);
     setError(null);
@@ -654,21 +678,54 @@ function TariffForm({
     }
   }
   return (
-    <div className="flex gap-2">
-      <input
-        type="number"
-        min={100}
-        value={duty}
-        onChange={(e) => setDuty(e.target.value)}
-        className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
-      />
-      <button
-        onClick={go}
-        disabled={busy}
-        className="rounded-md border border-accent text-accent px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
-      >
-        {busy ? '…' : 'Apply'}
-      </button>
+    <div>
+      <div className="flex gap-2">
+        <input
+          type="number"
+          min={100}
+          value={duty}
+          onChange={(e) => setDuty(e.target.value)}
+          className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+        />
+        <button
+          onClick={go}
+          disabled={busy || !preview}
+          className="rounded-md border border-accent text-accent px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+        >
+          {busy ? '…' : 'Apply'}
+        </button>
+      </div>
+      <p className="mt-2 text-xs text-muted">
+        {preview ? (
+          <>
+            New required collateral{' '}
+            <span className="font-mono text-foreground">
+              {stroopsToXlm(preview.nextStroops.toString())} XLM
+            </span>
+            {preview.deltaStroops !== 0n ? (
+              <>
+                {' '}
+                <span
+                  className={`font-mono ${preview.deltaStroops > 0n ? 'text-danger' : 'text-success'}`}
+                >
+                  ({preview.deltaStroops > 0n ? '+' : '−'}
+                  {stroopsToXlm(
+                    (preview.deltaStroops < 0n
+                      ? -preview.deltaStroops
+                      : preview.deltaStroops
+                    ).toString()
+                  )}{' '}
+                  XLM)
+                </span>
+              </>
+            ) : (
+              ' (no change)'
+            )}
+          </>
+        ) : (
+          'Enter an annual duty estimate to preview the new requirement.'
+        )}
+      </p>
     </div>
   );
 }
@@ -684,8 +741,10 @@ function WithdrawCard({
   onDone: () => Promise<void>;
   setError: (e: string | null) => void;
 }) {
-  const [xlm, setXlm] = useState(stroopsToXlm(maxStroops));
+  const maxXlm = stroopsToXlm(maxStroops);
+  const [xlm, setXlm] = useState(maxXlm);
   const [busy, setBusy] = useState(false);
+  const atMax = xlm === maxXlm;
   async function go() {
     setBusy(true);
     setError(null);
@@ -701,21 +760,35 @@ function WithdrawCard({
     }
   }
   return (
-    <div className="rounded-md border border-border bg-card px-3 py-2 flex items-center gap-2">
-      <input
-        type="number"
-        step="0.01"
-        value={xlm}
-        onChange={(e) => setXlm(e.target.value)}
-        className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
-      />
-      <button
-        onClick={go}
-        disabled={busy}
-        className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-card disabled:opacity-50"
-      >
-        {busy ? '…' : 'Withdraw excess'}
-      </button>
+    <div className="rounded-md border border-border bg-card px-3 py-2">
+      <div className="flex items-center justify-between text-xs text-muted mb-1.5">
+        <span>Amount to withdraw (XLM)</span>
+        <span className="font-mono">Max {maxXlm}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          step="0.01"
+          value={xlm}
+          onChange={(e) => setXlm(e.target.value)}
+          className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+        />
+        <button
+          type="button"
+          onClick={() => setXlm(maxXlm)}
+          disabled={busy || atMax}
+          className="rounded-md border border-border px-2 py-1.5 text-xs hover:bg-background disabled:opacity-50"
+        >
+          Max
+        </button>
+        <button
+          onClick={go}
+          disabled={busy}
+          className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-card disabled:opacity-50"
+        >
+          {busy ? '…' : 'Withdraw excess'}
+        </button>
+      </div>
     </div>
   );
 }
@@ -786,9 +859,16 @@ function RegisterImporter({
         <button
           type="submit"
           disabled={busy}
-          className="rounded-md bg-accent px-4 py-2.5 text-accent-foreground hover:opacity-90 disabled:opacity-50 text-sm font-medium"
+          className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2.5 text-accent-foreground hover:opacity-90 disabled:opacity-50 text-sm font-medium"
         >
-          {busy ? 'Registering on Stellar testnet…' : 'Register importer'}
+          {busy ? (
+            <>
+              <Spinner />
+              Registering on Stellar testnet…
+            </>
+          ) : (
+            'Register importer'
+          )}
         </button>
       </form>
     </main>
