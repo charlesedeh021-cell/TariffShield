@@ -4,15 +4,18 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { Nav } from '@/components/Nav';
-import { api, ApiError, type ImporterDetail, type ContractEvent, stroopsToXlm } from '@/lib/api';
+import { ErrorBanner } from '@/components/ErrorBanner';
+import { api, type ImporterDetail, type ContractEvent, stroopsToXlm } from '@/lib/api';
 import { getUser, isAuthenticated } from '@/lib/auth';
+import { formatApiError, type FormattedError } from '@/lib/error-formatter';
+import { getEventAmountLabel } from '@/lib/event-helpers';
 
 export default function SuretyImporterDetail() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [detail, setDetail] = useState<ImporterDetail | null>(null);
   const [events, setEvents] = useState<ContractEvent[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FormattedError | string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [yieldXlm, setYieldXlm] = useState('1');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -36,7 +39,7 @@ export default function SuretyImporterDetail() {
       const page = await api.getImporterEventsCursor(params.id);
       setEvents(page.data);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e));
+      setError(formatApiError(e));
     }
   }, [params?.id]);
 
@@ -68,7 +71,7 @@ export default function SuretyImporterDetail() {
         );
       }
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e));
+      setError(formatApiError(e));
     } finally {
       setBusy(null);
     }
@@ -184,9 +187,13 @@ export default function SuretyImporterDetail() {
               Drains <span className="font-mono">{stroopsToXlm(totalAtRisk.toString())} XLM</span>{' '}
               (collateral + reserve) to surety wallet + freezes account. Use on importer default.
             </p>
+            <p className="mt-2 flex items-start gap-1.5 text-xs font-semibold text-danger">
+              <span aria-hidden="true">⚠</span>
+              <span>This action cannot be undone.</span>
+            </p>
             <button
               disabled={busy !== null || onc.isClawbacked || totalAtRisk === 0n}
-              onClick={() => act('clawback', () => api.clawback(detail.importer.id))}
+              onClick={() => setConfirmClawback(true)}
               className="mt-3 rounded-md bg-danger text-white px-4 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50"
             >
               {busy === 'clawback'
@@ -232,6 +239,8 @@ export default function SuretyImporterDetail() {
           </p>
         ) : null}
 
+        <ErrorBanner error={error} className="mt-4" />
+
         <div className="mt-10">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
             On-chain event log
@@ -246,9 +255,7 @@ export default function SuretyImporterDetail() {
                     <p className="text-sm font-medium">{e.kind}</p>
                     <p className="text-xs text-muted">{new Date(e.createdAt).toLocaleString()}</p>
                   </div>
-                  <span className="text-sm font-mono">
-                    {e.amount ? `${stroopsToXlm(e.amount)} XLM` : '—'}
-                  </span>
+                  <span className="text-sm font-mono">{getEventAmountLabel(e)}</span>
                   {e.txUrl ? (
                     <a
                       href={e.txUrl}
