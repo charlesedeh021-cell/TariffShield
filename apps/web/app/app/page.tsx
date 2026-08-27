@@ -32,6 +32,7 @@ import {
 } from '@/lib/api';
 import { getUser, isAuthenticated } from '@/lib/auth';
 import { useYieldProjection } from '@/lib/workers/useYieldProjection';
+import type { YieldProjectionResponse } from '@/lib/workers/yieldWorker.types';
 import * as Sentry from '@sentry/nextjs';
 
 function ImporterDashboard() {
@@ -464,20 +465,213 @@ function YieldProjectionPanel({ currentBalanceStroops }: { currentBalanceStroops
         {error ? (
           <p className="text-sm text-danger">{error}</p>
         ) : result ? (
-          <p className="text-sm">
-            Projected balance after <span className="font-mono">{result.months}</span> months:{' '}
-            <span className="font-mono font-semibold">
-              {stroopsToXlm(result.projectedBalanceStroops)} XLM
-            </span>{' '}
-            <span className="text-xs text-muted">
-              ({Number(result.totalYieldStroops) >= 0 ? '+' : ''}
-              {stroopsToXlm(result.totalYieldStroops)} XLM yield)
-            </span>
-          </p>
+          <div className={loading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
+            <p className="text-sm">
+              Projected balance after <span className="font-mono">{result.months}</span> months:{' '}
+              <span className="font-mono font-semibold">
+                {stroopsToXlm(result.projectedBalanceStroops)} XLM
+              </span>{' '}
+              <span className="text-xs text-muted">
+                ({Number(result.totalYieldStroops) >= 0 ? '+' : ''}
+                {stroopsToXlm(result.totalYieldStroops)} XLM yield)
+              </span>
+            </p>
+            <YieldProjectionChart monthly={result.monthly} />
+          </div>
         ) : loading ? (
           <p className="text-sm text-muted">Calculating…</p>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/** Rounds a tick step up to a "nice" 1/2/5 × 10^n value. */
+function niceStep(rawStep: number): number {
+  if (rawStep <= 0) return 1;
+  const magnitude = 10 ** Math.floor(Math.log10(rawStep));
+  const residual = rawStep / magnitude;
+  const niceResidual = residual > 5 ? 10 : residual > 2 ? 5 : residual > 1 ? 2 : 1;
+  return niceResidual * magnitude;
+}
+
+/** Produces ~tickCount evenly-spaced, human-readable tick values spanning [min, max]. */
+function niceTicks(min: number, max: number, tickCount = 4): number[] {
+  if (min === max) return [min, min + 1];
+  const step = niceStep((max - min) / (tickCount - 1));
+  const niceMin = Math.floor(min / step) * step;
+  const niceMax = Math.ceil(max / step) * step;
+  const ticks: number[] = [];
+  for (let v = niceMin; v <= niceMax + step / 2; v += step) ticks.push(v);
+  return ticks;
+}
+
+const CHART_W = 600;
+const CHART_H = 200;
+const CHART_PAD = { top: 12, right: 12, bottom: 24, left: 56 };
+
+/**
+ * Line/area render of the worker-computed month-by-month balance (#260
+ * follow-up) — plots `result.monthly` from useYieldProjection as-is, so it
+ * shares the same computation the summary line already uses and never
+ * triggers extra work on the main thread.
+ */
+function YieldProjectionChart({ monthly }: { monthly: YieldProjectionResponse['monthly'] }) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  const values = useMemo(
+    () => monthly.map((m) => Number(stroopsToXlm(m.balanceStroops))),
+    [monthly]
+  );
+
+  const plotW = CHART_W - CHART_PAD.left - CHART_PAD.right;
+  const plotH = CHART_H - CHART_PAD.top - CHART_PAD.bottom;
+  const bottomY = CHART_PAD.top + plotH;
+
+  const dataMin = Math.min(...values);
+  const dataMax = Math.max(...values);
+  const yTicks = niceTicks(dataMin, dataMax, 4);
+  const yDomainMin = yTicks[0];
+  const yDomainMax = yTicks[yTicks.length - 1];
+  const yRange = yDomainMax - yDomainMin || 1;
+
+  const xScale = (i: number) =>
+    values.length > 1
+      ? CHART_PAD.left + (i / (values.length - 1)) * plotW
+      : CHART_PAD.left + plotW / 2;
+  const yScale = (v: number) => CHART_PAD.top + (1 - (v - yDomainMin) / yRange) * plotH;
+
+  const linePoints = values.map((v, i) => `${xScale(i)},${yScale(v)}`);
+  const linePath = `M${linePoints.join(' L')}`;
+  const areaPath = `${linePath} L${xScale(values.length - 1)},${bottomY} L${xScale(0)},${bottomY} Z`;
+
+  const xTickIdxs = Array.from(
+    new Set([0, Math.floor((values.length - 1) / 2), values.length - 1].filter((i) => i >= 0))
+  );
+
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent<SVGRectElement>) => {
+      const svg = svgRef.current;
+      if (!svg || values.length === 0) return;
+      const rect = svg.getBoundingClientRect();
+      const relX = ((e.clientX - rect.left) / rect.width) * CHART_W;
+      const clamped = Math.max(CHART_PAD.left, Math.min(CHART_PAD.left + plotW, relX));
+      const t = values.length > 1 ? (clamped - CHART_PAD.left) / plotW : 0;
+      setHoverIdx(Math.round(t * (values.length - 1)));
+    },
+    [values.length, plotW]
+  );
+
+  if (values.length === 0) return null;
+
+  const hovered = hoverIdx !== null ? monthly[hoverIdx] : null;
+  const hoveredValue = hoverIdx !== null ? values[hoverIdx] : null;
+
+  return (
+    <div className="mt-3 w-full" style={{ aspectRatio: `${CHART_W} / ${CHART_H}` }}>
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+        width="100%"
+        height="100%"
+        role="img"
+        aria-label={`Projected balance over ${monthly.length} months, from ${values[0].toFixed(2)} to ${values[values.length - 1].toFixed(2)} XLM`}
+      >
+        {yTicks.map((t) => (
+          <g key={t}>
+            <line
+              x1={CHART_PAD.left}
+              x2={CHART_W - CHART_PAD.right}
+              y1={yScale(t)}
+              y2={yScale(t)}
+              stroke="var(--border)"
+              strokeWidth={1}
+            />
+            <text
+              x={CHART_PAD.left - 8}
+              y={yScale(t)}
+              textAnchor="end"
+              dominantBaseline="middle"
+              className="fill-muted font-mono"
+              fontSize={9}
+            >
+              {t.toLocaleString(undefined, { maximumFractionDigits: t % 1 === 0 ? 0 : 2 })}
+            </text>
+          </g>
+        ))}
+
+        {xTickIdxs.map((i) => (
+          <text
+            key={i}
+            x={xScale(i)}
+            y={CHART_H - 6}
+            textAnchor={i === 0 ? 'start' : i === values.length - 1 ? 'end' : 'middle'}
+            className="fill-muted font-mono"
+            fontSize={9}
+          >
+            M{monthly[i].month}
+          </text>
+        ))}
+
+        <path d={areaPath} fill="var(--accent)" fillOpacity={0.1} stroke="none" />
+        <path
+          d={linePath}
+          fill="none"
+          stroke="var(--accent)"
+          strokeWidth={2}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+
+        <circle
+          cx={xScale(values.length - 1)}
+          cy={yScale(values[values.length - 1])}
+          r={4}
+          fill="var(--accent)"
+          stroke="var(--card)"
+          strokeWidth={2}
+        />
+
+        {hoverIdx !== null && hoveredValue !== null && (
+          <>
+            <line
+              x1={xScale(hoverIdx)}
+              x2={xScale(hoverIdx)}
+              y1={CHART_PAD.top}
+              y2={bottomY}
+              stroke="var(--border)"
+              strokeWidth={1}
+            />
+            <circle
+              cx={xScale(hoverIdx)}
+              cy={yScale(hoveredValue)}
+              r={4}
+              fill="var(--accent)"
+              stroke="var(--card)"
+              strokeWidth={2}
+            />
+          </>
+        )}
+
+        <rect
+          x={CHART_PAD.left}
+          y={CHART_PAD.top}
+          width={plotW}
+          height={plotH}
+          fill="transparent"
+          onPointerMove={handlePointerMove}
+          onPointerLeave={() => setHoverIdx(null)}
+        />
+      </svg>
+      {hovered && hoveredValue !== null && (
+        <p className="mt-1 text-center text-xs text-muted">
+          Month <span className="font-mono">{hovered.month}</span>:{' '}
+          <span className="font-mono font-semibold text-foreground">
+            {hoveredValue.toLocaleString(undefined, { maximumFractionDigits: 4 })} XLM
+          </span>
+        </p>
+      )}
     </div>
   );
 }
