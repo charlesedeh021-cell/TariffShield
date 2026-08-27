@@ -154,6 +154,10 @@ export default function SuretyImporterDetail() {
               Drains <span className="font-mono">{stroopsToXlm(totalAtRisk.toString())} XLM</span>{' '}
               (collateral + reserve) to surety wallet + freezes account. Use on importer default.
             </p>
+            <p className="mt-2 flex items-start gap-1.5 text-xs font-semibold text-danger">
+              <span aria-hidden="true">⚠</span>
+              <span>This action cannot be undone.</span>
+            </p>
             <button
               disabled={busy !== null || onc.isClawbacked || totalAtRisk === 0n}
               onClick={() => act('clawback', () => api.clawback(detail.importer.id))}
