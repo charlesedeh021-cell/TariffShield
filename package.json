@@ -51,13 +51,6 @@
     ]
   },
   "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "^7.0.0",
-    "@typescript-eslint/parser": "^7.0.0",
-    "concurrently": "^9.2.4",
-    "eslint": "^8.57.0",
-    "husky": "^8.0.3",
-    "lint-staged": "^15.2.0",
-    "openapi-typescript": "^7.0.0",
     "@commitlint/cli": "^19.0.0",
     "@commitlint/config-conventional": "^19.0.0",
     "@semantic-release/changelog": "^6.0.0",
@@ -65,7 +58,14 @@
     "@semantic-release/git": "^10.0.0",
     "@semantic-release/github": "^10.0.0",
     "@semantic-release/npm": "^13.1.5",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "concurrently": "^9.2.4",
     "conventional-changelog-cli": "^5.0.0",
+    "eslint": "^8.57.0",
+    "husky": "^8.0.3",
+    "lint-staged": "^15.2.0",
+    "openapi-typescript": "^7.0.0",
     "prettier": "^3.0.0",
     "semantic-release": "^25.0.8",
     "tsx": "^4.19.0",
@@ -75,7 +75,9 @@
     "node": ">=20"
   },
   "dependencies": {
-    "commander": "^15.0.0"
+    "commander": "^15.0.0",
+    "lightningcss": "^1.33.0",
+    "lightningcss-darwin-arm64": "^1.33.0"
   },
   "overrides": {
     "form-data": "^4.0.6",

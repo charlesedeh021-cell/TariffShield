@@ -15,6 +15,16 @@ export default function SuretyImporterDetail() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [yieldXlm, setYieldXlm] = useState('1');
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Clear success message automatically after 5 seconds
+  useEffect(() => {
+    if (!successMessage) return;
+    const timer = setTimeout(() => {
+      setSuccessMessage(null);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [successMessage]);
 
   const refresh = useCallback(async () => {
     if (!params?.id) return;
@@ -46,9 +56,17 @@ export default function SuretyImporterDetail() {
   async function act(name: string, fn: () => Promise<unknown>) {
     setBusy(name);
     setError(null);
+    setSuccessMessage(null);
     try {
       await fn();
       await refresh();
+      if (name === 'yield') {
+        setSuccessMessage(`Simulated yield of ${yieldXlm} XLM successfully accrued.`);
+      } else if (name === 'clawback') {
+        setSuccessMessage(
+          'Emergency clawback successfully executed. Importer account has been frozen.'
+        );
+      }
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e));
     } finally {
@@ -73,8 +91,23 @@ export default function SuretyImporterDetail() {
     <>
       <Nav />
       <main className="max-w-4xl mx-auto px-6 py-10">
-        <Link href="/surety" className="text-sm text-accent hover:underline">
-          ← Back to portfolio
+        <Link
+          href="/surety"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border bg-card text-xs font-medium text-muted hover:text-accent hover:border-accent/40 transition-colors"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            className="w-3.5 h-3.5"
+          >
+            <path
+              fillRule="evenodd"
+              d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z"
+              clipRule="evenodd"
+            />
+          </svg>
+          Back to portfolio
         </Link>
 
         <div className="mt-4">
@@ -166,6 +199,32 @@ export default function SuretyImporterDetail() {
             </button>
           </div>
         </div>
+
+        {successMessage ? (
+          <div className="mt-4 flex items-center justify-between rounded border border-success bg-success/10 px-3 py-2 text-sm text-success transition-all duration-300">
+            <div className="flex items-center gap-2">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                className="w-5 h-5 flex-shrink-0"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              <span>{successMessage}</span>
+            </div>
+            <button
+              onClick={() => setSuccessMessage(null)}
+              className="text-success hover:opacity-85 text-xs font-semibold focus:outline-none"
+            >
+              Dismiss
+            </button>
+          </div>
+        ) : null}
 
         {error ? (
           <p className="mt-4 rounded border border-danger bg-danger/10 px-3 py-2 text-sm text-danger">

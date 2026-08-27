@@ -52,6 +52,14 @@ export default function Signup() {
               <option value="importer">Importer (CBP bondholder)</option>
               <option value="surety_admin">Surety admin (Roanoke / Avalon / etc.)</option>
             </select>
+            <p className="mt-2 text-xs text-muted leading-relaxed">
+              {form.role === 'importer'
+                ? 'Importers post yield-bearing USDC collateral, configure auto-top-up reserves, and view active customs-bond metrics.'
+                : 'Surety admins manage continuous importer portfolios, set required collateral, accrue yield, and execute emergency clawbacks.'}{' '}
+              This selection determines dashboard access and permissions and{' '}
+              <span className="font-semibold text-foreground/80">cannot be changed</span> after
+              registration without contacting support.
+            </p>
           </label>
           <label className="block">
             <span className="block text-sm font-medium">Work email</span>

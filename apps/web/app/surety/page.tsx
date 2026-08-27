@@ -52,7 +52,16 @@ export default function SuretyDashboard() {
           Bonded importers + emergency clawback. All actions execute on Stellar testnet.
         </p>
 
-        {metrics ? (
+        {importers === null ? (
+          <div className="mt-6 grid gap-4 sm:grid-cols-4 animate-pulse">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="rounded-lg border border-border bg-card p-4">
+                <div className="h-3 w-20 rounded bg-border" />
+                <div className="mt-2 h-6 w-24 rounded bg-border" />
+              </div>
+            ))}
+          </div>
+        ) : metrics ? (
           <div className="mt-6 grid gap-4 sm:grid-cols-4">
             <MetricTile label="Total importers" value={String(metrics.totalImporters)} />
             <MetricTile
@@ -72,7 +81,18 @@ export default function SuretyDashboard() {
 
         <div className="mt-8">
           {importers === null ? (
-            <p className="text-sm text-muted">Loading…</p>
+            <div className="divide-y divide-border rounded-lg border border-border bg-card animate-pulse">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="flex items-center justify-between gap-4 px-4 py-4">
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="h-4 w-40 rounded bg-border" />
+                    <div className="h-3 w-56 rounded bg-border" />
+                    <div className="h-3 w-72 rounded bg-border" />
+                  </div>
+                  <div className="h-4 w-12 rounded bg-border" />
+                </div>
+              ))}
+            </div>
           ) : importers.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border p-10 text-center">
               <p className="text-sm text-muted">No bonded importers yet.</p>
