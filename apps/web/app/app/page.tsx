@@ -48,6 +48,7 @@ function ImporterDashboard() {
   const [busy, setBusy] = useState<string | null>(null);
   const [events, setEvents] = useState<ContractEvent[]>([]);
   const [refreshCount, setRefreshCount] = useState(0);
+  const [showTopUpConfirm, setShowTopUpConfirm] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -245,7 +246,7 @@ function ImporterDashboard() {
         {!onc.isClawbacked && (
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <button
-              onClick={handleTopUp}
+              onClick={() => setShowTopUpConfirm(true)}
               disabled={busy !== null || shortfall === 0n}
               className="rounded-md bg-accent px-4 py-3 text-accent-foreground hover:opacity-90 disabled:opacity-40 text-sm font-medium"
             >
@@ -267,6 +268,51 @@ function ImporterDashboard() {
                 No excess to withdraw.
               </div>
             )}
+          </div>
+        )}
+
+        {showTopUpConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-xl space-y-4">
+              <h3 className="text-lg font-semibold tracking-tight">Confirm Auto Top-Up</h3>
+              <p className="text-sm text-muted">
+                Are you sure you want to execute an on-chain transfer moving collateral shortfall from your reserve pool?
+              </p>
+              <div className="rounded-md border border-border bg-background p-3 text-xs space-y-1.5 font-mono">
+                <div className="flex justify-between">
+                  <span className="text-muted">Transfer Amount:</span>
+                  <span className="font-semibold text-accent">{stroopsToXlm(shortfall.toString())} XLM</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted">From:</span>
+                  <span>Reserve Pool ({stroopsToXlm(reserve.toString())} XLM)</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted">To:</span>
+                  <span>Collateral Escrow</span>
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowTopUpConfirm(false)}
+                  className="rounded-md border border-border px-4 py-2 text-sm hover:bg-background font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowTopUpConfirm(false);
+                    handleTopUp();
+                  }}
+                  disabled={busy !== null}
+                  className="rounded-md bg-accent px-4 py-2 text-accent-foreground text-sm hover:opacity-90 font-medium"
+                >
+                  Confirm &amp; Transfer
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
