@@ -12,6 +12,24 @@ export default function SuretyDashboard() {
   const [importers, setImporters] = useState<Importer[] | null>(null);
   const [metrics, setMetrics] = useState<ImporterMetrics | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [signupUrl, setSignupUrl] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setSignupUrl(`${window.location.origin}/signup`);
+    }
+  }, []);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(signupUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy signup link', err);
+    }
+  };
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -100,6 +118,17 @@ export default function SuretyDashboard() {
                 Importers register themselves via the importer dashboard. Share signup link with
                 your book.
               </p>
+              {signupUrl && (
+                <div className="mt-4 flex items-center justify-center gap-2 max-w-md mx-auto rounded-md border border-border bg-card p-2 text-xs">
+                  <span className="truncate font-mono text-muted select-all">{signupUrl}</span>
+                  <button
+                    onClick={handleCopy}
+                    className="shrink-0 rounded bg-accent px-2.5 py-1.5 text-accent-foreground font-semibold hover:opacity-90 transition-opacity"
+                  >
+                    {copied ? 'Copied!' : 'Copy link'}
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <ul className="divide-y divide-border rounded-lg border border-border bg-card">

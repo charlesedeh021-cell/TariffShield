@@ -264,8 +264,13 @@ function ImporterDashboard() {
                 setError={setError}
               />
             ) : (
-              <div className="rounded-md border border-border bg-card px-4 py-3 text-sm text-muted">
-                No excess to withdraw.
+              <div className="rounded-md border border-border bg-card px-4 py-3 text-xs text-muted flex flex-col justify-center space-y-1">
+                <p className="font-semibold text-sm text-foreground">No excess to withdraw</p>
+                <p>
+                  Your active collateral is at or below the required threshold. This is normal and
+                  expected for a compliant bond. To make collateral withdrawable, deposit additional
+                  funds exceeding the required balance.
+                </p>
               </div>
             )}
           </div>
@@ -276,12 +281,15 @@ function ImporterDashboard() {
             <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-xl space-y-4">
               <h3 className="text-lg font-semibold tracking-tight">Confirm Auto Top-Up</h3>
               <p className="text-sm text-muted">
-                Are you sure you want to execute an on-chain transfer moving collateral shortfall from your reserve pool?
+                Are you sure you want to execute an on-chain transfer moving collateral shortfall
+                from your reserve pool?
               </p>
               <div className="rounded-md border border-border bg-background p-3 text-xs space-y-1.5 font-mono">
                 <div className="flex justify-between">
                   <span className="text-muted">Transfer Amount:</span>
-                  <span className="font-semibold text-accent">{stroopsToXlm(shortfall.toString())} XLM</span>
+                  <span className="font-semibold text-accent">
+                    {stroopsToXlm(shortfall.toString())} XLM
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted">From:</span>
@@ -1067,7 +1075,11 @@ function RegisterImporter({
   error: FormattedError | string | null;
 }) {
   const [form, setForm] = useState({ legalName: '', ein: '', annualDutyEstimate: '5000000' });
-  const [fieldErrors, setFieldErrors] = useState<{ legalName?: string; ein?: string; annualDutyEstimate?: string }>({});
+  const [fieldErrors, setFieldErrors] = useState<{
+    legalName?: string;
+    ein?: string;
+    annualDutyEstimate?: string;
+  }>({});
   const [busy, setBusy] = useState(false);
 
   function validate(): boolean {
