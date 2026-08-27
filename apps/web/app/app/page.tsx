@@ -31,6 +31,7 @@ import {
   type ImporterDetail,
   type ContractEvent,
   stroopsToXlm,
+  formatUsd,
 } from '@/lib/api';
 import { getUser, isAuthenticated } from '@/lib/auth';
 import { formatApiError, type FormattedError } from '@/lib/error-formatter';
@@ -213,7 +214,6 @@ function ImporterDashboard() {
                   setError={setError}
                 />
               }
-              busy={busy === 'tariff'}
             />
             <ActionCard
               title="Deposit collateral"
@@ -226,7 +226,6 @@ function ImporterDashboard() {
                   setError={setError}
                 />
               }
-              busy={busy === 'deposit-collateral'}
             />
             <ActionCard
               title="Deposit reserve"
@@ -239,7 +238,6 @@ function ImporterDashboard() {
                   setError={setError}
                 />
               }
-              busy={busy === 'deposit-reserve'}
             />
           </div>
         )}
@@ -828,23 +826,23 @@ const EventLogRow = memo(function EventLogRow({ event }: { event: ContractEvent 
   );
 });
 
+// #1082: this card deliberately renders no busy text of its own. Each action
+// below owns exactly one busy indicator, shown on the control that started it,
+// so a single in-flight action never surfaces two differently-worded messages.
 function ActionCard({
   title,
   description,
   action,
-  busy,
 }: {
   title: string;
   description: string;
   action: React.ReactNode;
-  busy: boolean;
 }) {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <h3 className="text-sm font-semibold">{title}</h3>
       <p className="mt-1 text-xs text-muted">{description}</p>
       <div className="mt-3">{action}</div>
-      {busy ? <p className="mt-2 text-xs text-accent">Submitting to Stellar…</p> : null}
     </div>
   );
 }
@@ -907,9 +905,14 @@ function TariffForm({
           disabled={busy || !preview}
           className="rounded-md border border-accent text-accent px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
         >
-          {busy ? '…' : 'Apply'}
+          {busy ? 'Applying…' : 'Apply'}
         </button>
       </div>
+      {formatUsd(duty) ? (
+        <p className="mt-1 text-xs font-mono text-muted">
+          {formatUsd(duty)} <span className="font-sans">annual duty</span>
+        </p>
+      ) : null}
       <p className="mt-2 text-xs text-muted">
         {preview ? (
           <>
@@ -1065,6 +1068,11 @@ function RegisterImporter({
           value={form.annualDutyEstimate}
           onChange={(v) => setForm({ ...form, annualDutyEstimate: v })}
           required
+          hint={
+            formatUsd(form.annualDutyEstimate) ? (
+              <span className="font-mono">{formatUsd(form.annualDutyEstimate)}</span>
+            ) : null
+          }
         />
         <ErrorBanner error={error} />
         <button
@@ -1093,6 +1101,7 @@ function Field({
   onChange,
   placeholder,
   required,
+  hint,
 }: {
   label: string;
   type?: string;
@@ -1100,6 +1109,8 @@ function Field({
   onChange: (v: string) => void;
   placeholder?: string;
   required?: boolean;
+  /** Read-only line rendered under the input — e.g. a formatted currency preview. */
+  hint?: React.ReactNode;
 }) {
   return (
     <label className="block">
@@ -1112,6 +1123,7 @@ function Field({
         required={required}
         className="mt-1 block w-full rounded-md border border-border bg-card px-3 py-2 text-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
       />
+      {hint ? <span className="mt-1 block text-xs text-muted">{hint}</span> : null}
     </label>
   );
 }

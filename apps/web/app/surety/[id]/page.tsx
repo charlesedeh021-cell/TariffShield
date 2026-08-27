@@ -18,6 +18,7 @@ export default function SuretyImporterDetail() {
   const [error, setError] = useState<FormattedError | string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [yieldXlm, setYieldXlm] = useState('1');
+  const [confirmClawback, setConfirmClawback] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!params?.id) return;
@@ -154,9 +155,13 @@ export default function SuretyImporterDetail() {
               Drains <span className="font-mono">{stroopsToXlm(totalAtRisk.toString())} XLM</span>{' '}
               (collateral + reserve) to surety wallet + freezes account. Use on importer default.
             </p>
+            <p className="mt-2 flex items-start gap-1.5 text-xs font-semibold text-danger">
+              <span aria-hidden="true">⚠</span>
+              <span>This action cannot be undone.</span>
+            </p>
             <button
               disabled={busy !== null || onc.isClawbacked || totalAtRisk === 0n}
-              onClick={() => act('clawback', () => api.clawback(detail.importer.id))}
+              onClick={() => setConfirmClawback(true)}
               className="mt-3 rounded-md bg-danger text-white px-4 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50"
             >
               {busy === 'clawback'
@@ -169,6 +174,51 @@ export default function SuretyImporterDetail() {
             </button>
           </div>
         </div>
+
+        {confirmClawback ? (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="clawback-confirm-title"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+          >
+            <div className="w-full max-w-md rounded-lg border border-danger bg-card p-5 shadow-lg">
+              <h2 id="clawback-confirm-title" className="text-base font-semibold text-danger">
+                Confirm emergency clawback
+              </h2>
+              <p className="mt-3 text-sm">
+                This will drain{' '}
+                <span className="font-mono font-semibold">
+                  {stroopsToXlm(totalAtRisk.toString())} XLM
+                </span>{' '}
+                (collateral + reserve) to the surety wallet and permanently freeze{' '}
+                {detail.importer.legalName}&apos;s account.
+              </p>
+              <p className="mt-3 flex items-start gap-1.5 text-sm font-semibold text-danger">
+                <span aria-hidden="true">⚠</span>
+                <span>This action is irreversible and cannot be undone.</span>
+              </p>
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  onClick={() => setConfirmClawback(false)}
+                  className="rounded-md border border-border px-4 py-2 text-sm hover:bg-background"
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={busy !== null}
+                  onClick={() => {
+                    setConfirmClawback(false);
+                    act('clawback', () => api.clawback(detail.importer.id));
+                  }}
+                  className="rounded-md bg-danger px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+                >
+                  Clawback {stroopsToXlm(totalAtRisk.toString())} XLM
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <ErrorBanner error={error} className="mt-4" />
 
