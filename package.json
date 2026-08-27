@@ -76,7 +76,8 @@
   },
   "dependencies": {
     "commander": "^15.0.0",
-    "lightningcss": "^1.33.0"
+    "lightningcss": "^1.33.0",
+    "lightningcss-darwin-arm64": "^1.33.0"
   },
   "overrides": {
     "form-data": "^4.0.6",

@@ -18,7 +18,16 @@ export default function SuretyImporterDetail() {
   const [error, setError] = useState<FormattedError | string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [yieldXlm, setYieldXlm] = useState('1');
-  const [confirmClawback, setConfirmClawback] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Clear success message automatically after 5 seconds
+  useEffect(() => {
+    if (!successMessage) return;
+    const timer = setTimeout(() => {
+      setSuccessMessage(null);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [successMessage]);
 
   const refresh = useCallback(async () => {
     if (!params?.id) return;
@@ -50,9 +59,17 @@ export default function SuretyImporterDetail() {
   async function act(name: string, fn: () => Promise<unknown>) {
     setBusy(name);
     setError(null);
+    setSuccessMessage(null);
     try {
       await fn();
       await refresh();
+      if (name === 'yield') {
+        setSuccessMessage(`Simulated yield of ${yieldXlm} XLM successfully accrued.`);
+      } else if (name === 'clawback') {
+        setSuccessMessage(
+          'Emergency clawback successfully executed. Importer account has been frozen.'
+        );
+      }
     } catch (e) {
       setError(formatApiError(e));
     } finally {
@@ -77,8 +94,23 @@ export default function SuretyImporterDetail() {
     <>
       <Nav />
       <main className="max-w-4xl mx-auto px-6 py-10">
-        <Link href="/surety" className="text-sm text-accent hover:underline">
-          ← Back to portfolio
+        <Link
+          href="/surety"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border bg-card text-xs font-medium text-muted hover:text-accent hover:border-accent/40 transition-colors"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            className="w-3.5 h-3.5"
+          >
+            <path
+              fillRule="evenodd"
+              d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z"
+              clipRule="evenodd"
+            />
+          </svg>
+          Back to portfolio
         </Link>
 
         <div className="mt-4">
@@ -175,49 +207,36 @@ export default function SuretyImporterDetail() {
           </div>
         </div>
 
-        {confirmClawback ? (
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="clawback-confirm-title"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
-          >
-            <div className="w-full max-w-md rounded-lg border border-danger bg-card p-5 shadow-lg">
-              <h2 id="clawback-confirm-title" className="text-base font-semibold text-danger">
-                Confirm emergency clawback
-              </h2>
-              <p className="mt-3 text-sm">
-                This will drain{' '}
-                <span className="font-mono font-semibold">
-                  {stroopsToXlm(totalAtRisk.toString())} XLM
-                </span>{' '}
-                (collateral + reserve) to the surety wallet and permanently freeze{' '}
-                {detail.importer.legalName}&apos;s account.
-              </p>
-              <p className="mt-3 flex items-start gap-1.5 text-sm font-semibold text-danger">
-                <span aria-hidden="true">⚠</span>
-                <span>This action is irreversible and cannot be undone.</span>
-              </p>
-              <div className="mt-5 flex justify-end gap-2">
-                <button
-                  onClick={() => setConfirmClawback(false)}
-                  className="rounded-md border border-border px-4 py-2 text-sm hover:bg-background"
-                >
-                  Cancel
-                </button>
-                <button
-                  disabled={busy !== null}
-                  onClick={() => {
-                    setConfirmClawback(false);
-                    act('clawback', () => api.clawback(detail.importer.id));
-                  }}
-                  className="rounded-md bg-danger px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-                >
-                  Clawback {stroopsToXlm(totalAtRisk.toString())} XLM
-                </button>
-              </div>
+        {successMessage ? (
+          <div className="mt-4 flex items-center justify-between rounded border border-success bg-success/10 px-3 py-2 text-sm text-success transition-all duration-300">
+            <div className="flex items-center gap-2">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                className="w-5 h-5 flex-shrink-0"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              <span>{successMessage}</span>
             </div>
+            <button
+              onClick={() => setSuccessMessage(null)}
+              className="text-success hover:opacity-85 text-xs font-semibold focus:outline-none"
+            >
+              Dismiss
+            </button>
           </div>
+        ) : null}
+
+        {error ? (
+          <p className="mt-4 rounded border border-danger bg-danger/10 px-3 py-2 text-sm text-danger">
+            {error}
+          </p>
         ) : null}
 
         <ErrorBanner error={error} className="mt-4" />
