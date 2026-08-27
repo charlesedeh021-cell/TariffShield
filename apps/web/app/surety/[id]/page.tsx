@@ -4,15 +4,18 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { Nav } from '@/components/Nav';
-import { api, ApiError, type ImporterDetail, type ContractEvent, stroopsToXlm } from '@/lib/api';
+import { ErrorBanner } from '@/components/ErrorBanner';
+import { api, type ImporterDetail, type ContractEvent, stroopsToXlm } from '@/lib/api';
 import { getUser, isAuthenticated } from '@/lib/auth';
+import { formatApiError, type FormattedError } from '@/lib/error-formatter';
+import { getEventAmountLabel } from '@/lib/event-helpers';
 
 export default function SuretyImporterDetail() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [detail, setDetail] = useState<ImporterDetail | null>(null);
   const [events, setEvents] = useState<ContractEvent[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FormattedError | string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [yieldXlm, setYieldXlm] = useState('1');
 
@@ -26,7 +29,7 @@ export default function SuretyImporterDetail() {
       const page = await api.getImporterEventsCursor(params.id);
       setEvents(page.data);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e));
+      setError(formatApiError(e));
     }
   }, [params?.id]);
 
@@ -50,7 +53,7 @@ export default function SuretyImporterDetail() {
       await fn();
       await refresh();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e));
+      setError(formatApiError(e));
     } finally {
       setBusy(null);
     }
@@ -167,11 +170,7 @@ export default function SuretyImporterDetail() {
           </div>
         </div>
 
-        {error ? (
-          <p className="mt-4 rounded border border-danger bg-danger/10 px-3 py-2 text-sm text-danger">
-            {error}
-          </p>
-        ) : null}
+        <ErrorBanner error={error} className="mt-4" />
 
         <div className="mt-10">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">
@@ -187,9 +186,7 @@ export default function SuretyImporterDetail() {
                     <p className="text-sm font-medium">{e.kind}</p>
                     <p className="text-xs text-muted">{new Date(e.createdAt).toLocaleString()}</p>
                   </div>
-                  <span className="text-sm font-mono">
-                    {e.amount ? `${stroopsToXlm(e.amount)} XLM` : '—'}
-                  </span>
+                  <span className="text-sm font-mono">{getEventAmountLabel(e)}</span>
                   {e.txUrl ? (
                     <a
                       href={e.txUrl}

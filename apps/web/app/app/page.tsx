@@ -24,15 +24,17 @@ import { DepositWizard } from '@/components/DepositWizard';
 import { BondTimeline } from '@/components/BondTimeline';
 import { DashboardSkeleton } from '@/components/DashboardSkeleton';
 import { Spinner } from '@/components/Spinner';
+import { ErrorBanner } from '@/components/ErrorBanner';
 import {
   api,
-  ApiError,
   type Importer,
   type ImporterDetail,
   type ContractEvent,
   stroopsToXlm,
 } from '@/lib/api';
 import { getUser, isAuthenticated } from '@/lib/auth';
+import { formatApiError, type FormattedError } from '@/lib/error-formatter';
+import { getEventAmountLabel } from '@/lib/event-helpers';
 import { useYieldProjection } from '@/lib/workers/useYieldProjection';
 import type { YieldProjectionResponse } from '@/lib/workers/yieldWorker.types';
 import * as Sentry from '@sentry/nextjs';
@@ -41,7 +43,7 @@ function ImporterDashboard() {
   const router = useRouter();
   const [importer, setImporter] = useState<Importer | null>(null);
   const [detail, setDetail] = useState<ImporterDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FormattedError | string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [events, setEvents] = useState<ContractEvent[]>([]);
   const [refreshCount, setRefreshCount] = useState(0);
@@ -61,7 +63,7 @@ function ImporterDashboard() {
       setEvents([]);
       setRefreshCount((prev) => prev + 1);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e));
+      setError(formatApiError(e));
     }
   }, []);
 
@@ -73,7 +75,7 @@ function ImporterDashboard() {
         await fn();
         await refresh();
       } catch (e) {
-        setError(e instanceof ApiError ? e.message : String(e));
+        setError(formatApiError(e));
       } finally {
         setBusy(null);
       }
@@ -270,11 +272,7 @@ function ImporterDashboard() {
           </div>
         )}
 
-        {error ? (
-          <p className="mt-4 rounded border border-danger bg-danger/10 px-3 py-2 text-sm text-danger">
-            {error}
-          </p>
-        ) : null}
+        <ErrorBanner error={error} className="mt-4" />
 
         <BondTimeline events={events} />
 
@@ -701,7 +699,7 @@ function EventLog({
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FormattedError | string | null>(null);
   const [started, setStarted] = useState(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const seenIds = useRef<Set<string>>(new Set());
@@ -717,7 +715,7 @@ function EventLog({
       setCursor(page.nextCursor);
       setHasMore(page.nextCursor !== null);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e));
+      setError(formatApiError(e));
     } finally {
       setLoading(false);
     }
@@ -745,7 +743,19 @@ function EventLog({
   return (
     <>
       {!started && !loading && events.length === 0 && !error ? (
-        <p className="mt-3 text-sm text-muted">Scroll to load event history…</p>
+        <div className="mt-3 flex items-center gap-3 flex-wrap">
+          <p className="text-sm text-muted">Scroll to load event history…</p>
+          <button
+            type="button"
+            onClick={() => {
+              setStarted(true);
+              loadNextPage();
+            }}
+            className="rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-card"
+          >
+            Load event history
+          </button>
+        </div>
       ) : events.length === 0 && !loading && !error ? (
         <p className="mt-3 text-sm text-muted">No events yet.</p>
       ) : (
@@ -759,14 +769,28 @@ function EventLog({
       {loading ? (
         <p className="mt-3 text-sm text-muted">Loading events…</p>
       ) : error ? (
-        <div className="mt-3 flex items-center gap-3">
-          <p className="text-sm text-danger">{error}</p>
-          <button
-            onClick={loadNextPage}
-            className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-card"
-          >
-            Retry
-          </button>
+        <div className="mt-3 rounded-md border border-danger/30 bg-danger/5 p-3 text-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <p className="font-medium text-danger">
+                {events.length > 0
+                  ? `Couldn't load more events: ${formatApiError(error).userMessage}`
+                  : `Couldn't load event history: ${formatApiError(error).userMessage}`}
+              </p>
+              {events.length > 0 && (
+                <p className="mt-1 text-xs text-muted">
+                  Previously loaded events remain visible and unaffected.
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={loadNextPage}
+              className="self-start sm:self-center shrink-0 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-card"
+            >
+              Retry
+            </button>
+          </div>
         </div>
       ) : null}
 
@@ -782,10 +806,7 @@ function EventLog({
  * re-render the full event list — only rows whose own event data changed.
  */
 const EventLogRow = memo(function EventLogRow({ event }: { event: ContractEvent }) {
-  const amountLabel = useMemo(
-    () => (event.amount ? `${stroopsToXlm(event.amount)} XLM` : '—'),
-    [event.amount]
-  );
+  const amountLabel = useMemo(() => getEventAmountLabel(event), [event]);
   return (
     <li className="px-4 py-3 flex items-center justify-between gap-4">
       <div className="flex-1 min-w-0">
@@ -837,7 +858,7 @@ function TariffForm({
   importerId: string;
   currentRequiredStroops: string;
   onDone: () => Promise<void>;
-  setError: (e: string | null) => void;
+  setError: (e: FormattedError | string | null) => void;
 }) {
   const [duty, setDuty] = useState('5000000');
   const [busy, setBusy] = useState(false);
@@ -866,7 +887,7 @@ function TariffForm({
       });
       await onDone();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e));
+      setError(formatApiError(e));
     } finally {
       setBusy(false);
     }
@@ -933,7 +954,7 @@ function WithdrawCard({
   importerId: string;
   maxStroops: string;
   onDone: () => Promise<void>;
-  setError: (e: string | null) => void;
+  setError: (e: FormattedError | string | null) => void;
 }) {
   const maxXlm = stroopsToXlm(maxStroops);
   const [xlm, setXlm] = useState(maxXlm);
@@ -948,7 +969,7 @@ function WithdrawCard({
       });
       await onDone();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e));
+      setError(formatApiError(e));
     } finally {
       setBusy(false);
     }
@@ -993,8 +1014,8 @@ function RegisterImporter({
   error,
 }: {
   onCreated: () => Promise<void>;
-  setError: (e: string | null) => void;
-  error: string | null;
+  setError: (e: FormattedError | string | null) => void;
+  error: FormattedError | string | null;
 }) {
   const [form, setForm] = useState({ legalName: '', ein: '', annualDutyEstimate: '5000000' });
   const [busy, setBusy] = useState(false);
@@ -1013,7 +1034,7 @@ function RegisterImporter({
       });
       await onCreated();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e));
+      setError(formatApiError(e));
     } finally {
       setBusy(false);
     }
@@ -1045,11 +1066,7 @@ function RegisterImporter({
           onChange={(v) => setForm({ ...form, annualDutyEstimate: v })}
           required
         />
-        {error ? (
-          <p className="rounded border border-danger bg-danger/10 px-3 py-2 text-sm text-danger">
-            {error}
-          </p>
-        ) : null}
+        <ErrorBanner error={error} />
         <button
           type="submit"
           disabled={busy}
