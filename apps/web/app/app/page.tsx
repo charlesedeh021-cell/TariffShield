@@ -31,6 +31,7 @@ import {
   type ImporterDetail,
   type ContractEvent,
   stroopsToXlm,
+  formatUsd,
 } from '@/lib/api';
 import { getUser, isAuthenticated } from '@/lib/auth';
 import { formatApiError, type FormattedError } from '@/lib/error-formatter';
@@ -907,6 +908,11 @@ function TariffForm({
           {busy ? 'Applying…' : 'Apply'}
         </button>
       </div>
+      {formatUsd(duty) ? (
+        <p className="mt-1 text-xs font-mono text-muted">
+          {formatUsd(duty)} <span className="font-sans">annual duty</span>
+        </p>
+      ) : null}
       <p className="mt-2 text-xs text-muted">
         {preview ? (
           <>
@@ -1062,6 +1068,11 @@ function RegisterImporter({
           value={form.annualDutyEstimate}
           onChange={(v) => setForm({ ...form, annualDutyEstimate: v })}
           required
+          hint={
+            formatUsd(form.annualDutyEstimate) ? (
+              <span className="font-mono">{formatUsd(form.annualDutyEstimate)}</span>
+            ) : null
+          }
         />
         <ErrorBanner error={error} />
         <button
@@ -1090,6 +1101,7 @@ function Field({
   onChange,
   placeholder,
   required,
+  hint,
 }: {
   label: string;
   type?: string;
@@ -1097,6 +1109,8 @@ function Field({
   onChange: (v: string) => void;
   placeholder?: string;
   required?: boolean;
+  /** Read-only line rendered under the input — e.g. a formatted currency preview. */
+  hint?: React.ReactNode;
 }) {
   return (
     <label className="block">
@@ -1109,6 +1123,7 @@ function Field({
         required={required}
         className="mt-1 block w-full rounded-md border border-border bg-card px-3 py-2 text-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
       />
+      {hint ? <span className="mt-1 block text-xs text-muted">{hint}</span> : null}
     </label>
   );
 }

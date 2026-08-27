@@ -173,3 +173,24 @@ export function stroopsToXlm(stroops: string | bigint | number): string {
   const frac = n % 10000000n;
   return `${whole}.${frac.toString().padStart(7, '0').slice(0, 4)}`;
 }
+
+/**
+ * Formats a raw duty-estimate input value as grouped USD for display only —
+ * e.g. '5000000' renders as '$5,000,000'. Returns null when the value is empty
+ * or not a finite number so callers can skip the preview rather than showing
+ * '$NaN' while the field is being typed into. The underlying input keeps its
+ * plain numeric string; nothing here touches submitted payloads.
+ */
+export function formatUsd(value: string | number): string | null {
+  const n = typeof value === 'number' ? value : Number(value.trim());
+  if (typeof value === 'string' && value.trim() === '') return null;
+  if (!Number.isFinite(n)) return null;
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    // Whole dollar amounts (the common case for a duty estimate) render as
+    // '$5,000,000' rather than '$5,000,000.00'; cents still show when entered.
+    minimumFractionDigits: Number.isInteger(n) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(n);
+}
