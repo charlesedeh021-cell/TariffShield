@@ -1,8 +1,18 @@
 import { Command } from "commander";
-import { pool } from "../apps/api/src/db.js";
-import { contractClient, platformKeypair } from "../apps/api/src/stellar.js";
-import { hashPassword } from "../apps/api/src/auth.js";
-import { Keypair } from "@stellar/stellar-sdk";
+import dotenv from "dotenv";
+
+// db.js/stellar.js/auth.js (via config/env.js) read process.env at module load
+// time, which happens as soon as they're imported — before commander parses
+// --env-file below. Scan argv for it and load the file ourselves first so
+// the option actually takes effect (#1141).
+const envFileFlagIndex = process.argv.findIndex((arg) => arg === "-e" || arg === "--env-file");
+const envFilePath = envFileFlagIndex !== -1 ? process.argv[envFileFlagIndex + 1] : undefined;
+dotenv.config(envFilePath ? { path: envFilePath } : undefined);
+
+const { pool } = await import("../apps/api/src/db.js");
+const { contractClient, platformKeypair } = await import("../apps/api/src/stellar.js");
+const { hashPassword } = await import("../apps/api/src/auth.js");
+const { Keypair } = await import("@stellar/stellar-sdk");
 
 const program = new Command();
 
