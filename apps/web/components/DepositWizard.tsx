@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { api, ApiError } from '@/lib/api';
+import { api } from '@/lib/api';
+import { formatApiError, type FormattedError } from '@/lib/error-formatter';
 
 type Step = 'amount' | 'preview' | 'confirm' | 'receipt';
 
@@ -14,7 +15,7 @@ export function DepositWizard({
   importerId: string;
   bucket: 'collateral' | 'reserve';
   onDone: () => Promise<void>;
-  setError: (e: string | null) => void;
+  setError: (e: FormattedError | string | null) => void;
 }) {
   const [step, setStep] = useState<Step>('amount');
   const [xlm, setXlm] = useState('50');
@@ -31,7 +32,7 @@ export function DepositWizard({
       setStep('receipt');
       await onDone();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e));
+      setError(formatApiError(e));
       setBusy(false);
     }
   }
