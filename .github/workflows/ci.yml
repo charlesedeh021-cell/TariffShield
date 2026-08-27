@@ -6,10 +6,29 @@ on:
   pull_request:
     branches: [main, master]
 
+# Least-privilege default: no job (including sentry-upload, which only
+# builds and uploads sourcemaps using a Sentry auth token) needs to write to
+# the repo, so the default GITHUB_TOKEN is scoped to read-only.
+permissions:
+  contents: read
+
+# Grouped per-ref so an in-flight run is cancelled by a newer push to the
+# same branch. This matters for sentry-upload in particular: it runs only on
+# main and uploads sourcemaps for the checked-out commit, so if two merges
+# to main land in quick succession, letting both runs finish can let the
+# older commit's sourcemaps land in Sentry after the newer commit's,
+# desyncing stack traces from source. Scoping by github.ref keeps
+# PR-triggered runs on different branches in separate groups, unaffected by
+# this cancellation.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,6 +56,7 @@ jobs:
   fmt:
     name: Rust Format Check
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
@@ -59,6 +79,7 @@ jobs:
   clippy:
     name: Rust Clippy Lints
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
@@ -81,6 +102,7 @@ jobs:
   typecheck:
     name: typecheck
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -94,6 +116,7 @@ jobs:
   lint:
     name: lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -107,6 +130,7 @@ jobs:
   audit:
     name: audit
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -120,6 +144,7 @@ jobs:
   sentry-upload:
     name: sentry-upload
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [test]
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     steps:

@@ -1,5 +1,11 @@
 import { parseArgs } from 'node:util';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { TariffShieldClient, checkCompatibility, CompatibilityError } from '@tariffshield/sdk';
+import { resolveDefaultSdkVersion } from './lib/check-contract-version-logic.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SDK_PACKAGE_JSON_PATH = path.join(__dirname, '..', 'packages', 'sdk', 'package.json');
 
 async function main() {
   const { values } = parseArgs({
@@ -13,7 +19,7 @@ async function main() {
   const contractId = values['contract-id'] || process.env.TARIFF_SHIELD_CONTRACT_ID;
   const rpcUrl =
     values['rpc-url'] || process.env.STELLAR_RPC_URL || 'https://soroban-testnet.stellar.org';
-  const sdkVersion = values['sdk-version'] || '0.1.0';
+  const sdkVersion = values['sdk-version'] || resolveDefaultSdkVersion(SDK_PACKAGE_JSON_PATH);
 
   if (!contractId) {
     console.error(
