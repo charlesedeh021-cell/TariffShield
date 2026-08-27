@@ -213,7 +213,6 @@ function ImporterDashboard() {
                   setError={setError}
                 />
               }
-              busy={busy === 'tariff'}
             />
             <ActionCard
               title="Deposit collateral"
@@ -226,7 +225,6 @@ function ImporterDashboard() {
                   setError={setError}
                 />
               }
-              busy={busy === 'deposit-collateral'}
             />
             <ActionCard
               title="Deposit reserve"
@@ -239,7 +237,6 @@ function ImporterDashboard() {
                   setError={setError}
                 />
               }
-              busy={busy === 'deposit-reserve'}
             />
           </div>
         )}
@@ -828,23 +825,23 @@ const EventLogRow = memo(function EventLogRow({ event }: { event: ContractEvent 
   );
 });
 
+// #1082: this card deliberately renders no busy text of its own. Each action
+// below owns exactly one busy indicator, shown on the control that started it,
+// so a single in-flight action never surfaces two differently-worded messages.
 function ActionCard({
   title,
   description,
   action,
-  busy,
 }: {
   title: string;
   description: string;
   action: React.ReactNode;
-  busy: boolean;
 }) {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <h3 className="text-sm font-semibold">{title}</h3>
       <p className="mt-1 text-xs text-muted">{description}</p>
       <div className="mt-3">{action}</div>
-      {busy ? <p className="mt-2 text-xs text-accent">Submitting to Stellar…</p> : null}
     </div>
   );
 }
@@ -907,7 +904,7 @@ function TariffForm({
           disabled={busy || !preview}
           className="rounded-md border border-accent text-accent px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
         >
-          {busy ? '…' : 'Apply'}
+          {busy ? 'Applying…' : 'Apply'}
         </button>
       </div>
       <p className="mt-2 text-xs text-muted">
