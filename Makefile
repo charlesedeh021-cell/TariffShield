@@ -2,7 +2,7 @@
 
 help:
 	@echo "Available targets:"
-	@echo "  dev             - Start Postgres, API, and Web dev servers concurrently"
+	@echo "  dev             - Start Postgres, Redis, API, and Web dev servers concurrently"
 	@echo "  test            - Run npm and cargo tests"
 	@echo "  build           - Build npm workspaces and cargo workspace"
 	@echo "  watch-contracts - Hot reload contract tests on file changes (cargo watch -x test)"
@@ -15,7 +15,7 @@ help:
 
 dev:
 	npm run setup-env
-	docker compose up -d postgres
+	docker compose up -d postgres redis
 	npm run dev
 
 test:

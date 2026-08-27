@@ -28,8 +28,8 @@ const SEED_ADMIN_EMAIL = "surety_admin@example.com";
 const SEED_ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? "Admin#123";
 
 const SEED_IMPORTERS = [
-  { email: "demo-importer-1@example.com", password: process.env.SEED_IMPORTER_PASSWORD ?? "Importer#123", legalName: "Demo Importer One LLC", ein: "12-3456789" },
-  { email: "demo-importer-2@example.com", password: process.env.SEED_IMPORTER_PASSWORD ?? "Importer#123", legalName: "Demo Importer Two Corp", ein: "98-7654321" },
+  { email: "demo-importer-1@example.com", password: process.env.SEED_IMPORTER_PASSWORD ?? "Importer#123", legalName: "Demo Importer One LLC", ein: "12-3456789", bondId: 1_000_000_000_000_001n },
+  { email: "demo-importer-2@example.com", password: process.env.SEED_IMPORTER_PASSWORD ?? "Importer#123", legalName: "Demo Importer Two Corp", ein: "98-7654321", bondId: 1_000_000_000_000_002n },
 ];
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -48,12 +48,11 @@ async function upsertUser(email: string, passwordHash: string, role: "importer" 
   return result.rows[0].id;
 }
 
-async function upsertImporter(userId: string, legalName: string, ein: string): Promise<string> {
-  const bondId = Math.floor(Math.random() * 9_000_000_000_000_000) + 1_000_000_000_000_000;
+async function upsertImporter(userId: string, legalName: string, ein: string, bondId: bigint): Promise<string> {
   const result = await pool.query(
     `INSERT INTO importers (user_id, legal_name, ein, bond_id, stellar_address, stellar_secret_encrypted)
      VALUES ($1, $2, $3, $4, $5, $6)
-     ON CONFLICT (user_id) DO UPDATE SET legal_name = EXCLUDED.legal_name
+     ON CONFLICT (user_id) DO UPDATE SET legal_name = EXCLUDED.legal_name, bond_id = EXCLUDED.bond_id
      RETURNING id`,
     [userId, legalName, ein, bondId, `G${randomUUID().replace(/-/g, "").slice(0, 55)}`, "encrypted-placeholder"]
   );
@@ -100,7 +99,7 @@ async function main(): Promise<void> {
   for (const imp of SEED_IMPORTERS) {
     const hash = await hashPassword(imp.password);
     const userId = await upsertUser(imp.email, hash, "importer");
-    const importerId = await upsertImporter(userId, imp.legalName, imp.ein);
+    const importerId = await upsertImporter(userId, imp.legalName, imp.ein, imp.bondId);
     importerResults.push({ email: imp.email, password: imp.password, userId, importerId });
   }
 
