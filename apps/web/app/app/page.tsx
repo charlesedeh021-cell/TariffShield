@@ -22,6 +22,7 @@ import { Nav } from '@/components/Nav';
 import { HealthScore } from '@/components/HealthScore';
 import { DepositWizard } from '@/components/DepositWizard';
 import { BondTimeline } from '@/components/BondTimeline';
+import { DashboardSkeleton } from '@/components/DashboardSkeleton';
 import { Spinner } from '@/components/Spinner';
 import {
   api,
@@ -135,9 +136,7 @@ function ImporterDashboard() {
     return (
       <>
         <Nav />
-        <main className="max-w-4xl mx-auto px-6 py-10">
-          <p className="text-muted">Loading…</p>
-        </main>
+        <DashboardSkeleton />
       </>
     );
   }
