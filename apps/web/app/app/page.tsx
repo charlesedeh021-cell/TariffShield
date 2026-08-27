@@ -1021,17 +1021,43 @@ function RegisterImporter({
   error: FormattedError | string | null;
 }) {
   const [form, setForm] = useState({ legalName: '', ein: '', annualDutyEstimate: '5000000' });
+  const [fieldErrors, setFieldErrors] = useState<{ legalName?: string; ein?: string; annualDutyEstimate?: string }>({});
   const [busy, setBusy] = useState(false);
+
+  function validate(): boolean {
+    const errs: { legalName?: string; ein?: string; annualDutyEstimate?: string } = {};
+    if (!form.legalName.trim()) {
+      errs.legalName = 'Legal name is required';
+    }
+    if (form.ein.trim() && !/^\d{2}-\d{7}$/.test(form.ein.trim())) {
+      errs.ein = 'EIN must be formatted as XX-XXXXXXX (e.g. 12-3456789)';
+    }
+    const dutyNum = Number(form.annualDutyEstimate);
+    if (!form.annualDutyEstimate || !Number.isFinite(dutyNum) || dutyNum < 100) {
+      errs.annualDutyEstimate = 'Annual duty estimate must be at least $100';
+    }
+    setFieldErrors(errs);
+    return Object.keys(errs).length === 0;
+  }
+
+  const updateField = (field: 'legalName' | 'ein' | 'annualDutyEstimate', value: string) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+    if (fieldErrors[field]) {
+      setFieldErrors((prev) => ({ ...prev, [field]: undefined }));
+    }
+  };
+
   async function go(e: React.FormEvent) {
     e.preventDefault();
+    if (!validate()) return;
     setBusy(true);
     setError(null);
     try {
       // Initial required collat estimate: same formula as tariff CSV (annual × 10% × 50% × 1e7 stroops)
       const stroops = BigInt(Math.round(Number(form.annualDutyEstimate) * 0.05 * 1e7));
       await api.createImporter({
-        legalName: form.legalName,
-        ein: form.ein || undefined,
+        legalName: form.legalName.trim(),
+        ein: form.ein.trim() || undefined,
         bondId: Math.floor(Date.now() / 1000),
         initialRequiredCollateral: stroops.toString(),
       });
@@ -1042,6 +1068,7 @@ function RegisterImporter({
       setBusy(false);
     }
   }
+
   return (
     <main className="max-w-md mx-auto px-6 py-10">
       <h1 className="text-2xl font-semibold tracking-tight">Register your importer entity</h1>
@@ -1052,22 +1079,25 @@ function RegisterImporter({
         <Field
           label="Legal name"
           value={form.legalName}
-          onChange={(v) => setForm({ ...form, legalName: v })}
+          onChange={(v) => updateField('legalName', v)}
           placeholder="Wayfair Imports Inc"
           required
+          error={fieldErrors.legalName}
         />
         <Field
           label="EIN (optional)"
           value={form.ein}
-          onChange={(v) => setForm({ ...form, ein: v })}
+          onChange={(v) => updateField('ein', v)}
           placeholder="12-3456789"
+          error={fieldErrors.ein}
         />
         <Field
           label="Annual customs duty estimate (USD)"
           type="number"
           value={form.annualDutyEstimate}
-          onChange={(v) => setForm({ ...form, annualDutyEstimate: v })}
+          onChange={(v) => updateField('annualDutyEstimate', v)}
           required
+          error={fieldErrors.annualDutyEstimate}
           hint={
             formatUsd(form.annualDutyEstimate) ? (
               <span className="font-mono">{formatUsd(form.annualDutyEstimate)}</span>
@@ -1102,6 +1132,7 @@ function Field({
   placeholder,
   required,
   hint,
+  error,
 }: {
   label: string;
   type?: string;
@@ -1111,6 +1142,8 @@ function Field({
   required?: boolean;
   /** Read-only line rendered under the input — e.g. a formatted currency preview. */
   hint?: React.ReactNode;
+  /** Field-specific error guidance text. */
+  error?: string;
 }) {
   return (
     <label className="block">
@@ -1121,8 +1154,11 @@ function Field({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         required={required}
-        className="mt-1 block w-full rounded-md border border-border bg-card px-3 py-2 text-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+        className={`mt-1 block w-full rounded-md border ${
+          error ? 'border-danger' : 'border-border'
+        } bg-card px-3 py-2 text-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent`}
       />
+      {error ? <span className="mt-1 block text-xs text-danger">{error}</span> : null}
       {hint ? <span className="mt-1 block text-xs text-muted">{hint}</span> : null}
     </label>
   );
