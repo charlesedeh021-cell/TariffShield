@@ -1,3 +1,7 @@
+'use client';
+
+import { useState } from 'react';
+
 export function HealthScore({
   collateral,
   required,
@@ -7,6 +11,8 @@ export function HealthScore({
   required: bigint;
   reserve: bigint;
 }) {
+  const [showInfo, setShowInfo] = useState(false);
+
   const coverageRatio = required === 0n ? 100 : Number((collateral * 100n) / required);
   const reserveRatio = collateral === 0n ? 0 : Number((reserve * 100n) / collateral);
 
@@ -34,7 +40,50 @@ export function HealthScore({
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
-      <p className="text-xs uppercase tracking-wide text-muted">Account Health Score</p>
+      <div className="flex items-center gap-1.5">
+        <p className="text-xs uppercase tracking-wide text-muted">Account Health Score</p>
+        <button
+          type="button"
+          onClick={() => setShowInfo(!showInfo)}
+          aria-label="Account Health Score breakdown formula and grade thresholds"
+          className="inline-flex items-center justify-center text-muted hover:text-foreground focus:outline-none text-xs rounded-full w-4 h-4 border border-muted/40 hover:border-foreground"
+        >
+          ⓘ
+        </button>
+      </div>
+
+      {showInfo && (
+        <div className="mt-3 text-xs text-muted bg-background/50 border border-border rounded-md p-3 space-y-2">
+          <p className="font-semibold text-foreground">How Health Score is Calculated</p>
+          <p>
+            The score (0–100) is a weighted combination of your collateral ratios:
+          </p>
+          <ul className="list-disc list-inside space-y-0.5">
+            <li>
+              <span className="font-medium text-foreground">70% Coverage Ratio</span>: Collateral ÷ Required (capped at 100%)
+            </li>
+            <li>
+              <span className="font-medium text-foreground">30% Reserve Ratio</span>: Reserve ÷ Collateral (capped at 100%)
+            </li>
+          </ul>
+          <p className="font-semibold text-foreground pt-1">Grade Thresholds</p>
+          <ul className="grid grid-cols-2 gap-1 text-[11px]">
+            <li>
+              <span className="text-success font-medium">Excellent</span>: 80–100
+            </li>
+            <li>
+              <span className="text-accent font-medium">Good</span>: 60–79
+            </li>
+            <li>
+              <span className="text-yellow-500 font-medium">Fair</span>: 40–59
+            </li>
+            <li>
+              <span className="text-danger font-medium">Poor</span>: &lt; 40
+            </li>
+          </ul>
+        </div>
+      )}
+
       <div className="mt-3 flex items-center justify-between">
         <div>
           <p className="text-4xl font-bold">{healthScore}</p>
