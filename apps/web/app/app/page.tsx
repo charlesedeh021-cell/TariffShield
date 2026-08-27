@@ -203,7 +203,14 @@ function ImporterDashboard() {
             <ActionCard
               title="Update tariff exposure"
               description="Re-run required collateral from annual duty estimate. Demo computes required = annual_duty × 10% × 50%."
-              action={<TariffForm importerId={importer.id} onDone={refresh} setError={setError} />}
+              action={
+                <TariffForm
+                  importerId={importer.id}
+                  currentRequiredStroops={required.toString()}
+                  onDone={refresh}
+                  setError={setError}
+                />
+              }
               busy={busy === 'tariff'}
             />
             <ActionCard
@@ -630,15 +637,32 @@ function ActionCard({
 
 function TariffForm({
   importerId,
+  currentRequiredStroops,
   onDone,
   setError,
 }: {
   importerId: string;
+  currentRequiredStroops: string;
   onDone: () => Promise<void>;
   setError: (e: string | null) => void;
 }) {
   const [duty, setDuty] = useState('5000000');
   const [busy, setBusy] = useState(false);
+
+  // Mirror of the server-side / documented formula: required = annual_duty × 10% × 50%,
+  // scaled to stroops (1 XLM = 1e7). Recomputed live as the duty input changes so the
+  // importer sees the resulting requirement before committing the on-chain update.
+  const preview = useMemo(() => {
+    const d = Number(duty);
+    if (!Number.isFinite(d) || d <= 0) return null;
+    const nextStroops = BigInt(Math.round(d * 0.05 * 1e7));
+    const currentStroops = BigInt(currentRequiredStroops);
+    return {
+      nextStroops,
+      deltaStroops: nextStroops - currentStroops,
+    };
+  }, [duty, currentRequiredStroops]);
+
   async function go() {
     setBusy(true);
     setError(null);
@@ -655,21 +679,54 @@ function TariffForm({
     }
   }
   return (
-    <div className="flex gap-2">
-      <input
-        type="number"
-        min={100}
-        value={duty}
-        onChange={(e) => setDuty(e.target.value)}
-        className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
-      />
-      <button
-        onClick={go}
-        disabled={busy}
-        className="rounded-md border border-accent text-accent px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
-      >
-        {busy ? '…' : 'Apply'}
-      </button>
+    <div>
+      <div className="flex gap-2">
+        <input
+          type="number"
+          min={100}
+          value={duty}
+          onChange={(e) => setDuty(e.target.value)}
+          className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+        />
+        <button
+          onClick={go}
+          disabled={busy || !preview}
+          className="rounded-md border border-accent text-accent px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+        >
+          {busy ? '…' : 'Apply'}
+        </button>
+      </div>
+      <p className="mt-2 text-xs text-muted">
+        {preview ? (
+          <>
+            New required collateral{' '}
+            <span className="font-mono text-foreground">
+              {stroopsToXlm(preview.nextStroops.toString())} XLM
+            </span>
+            {preview.deltaStroops !== 0n ? (
+              <>
+                {' '}
+                <span
+                  className={`font-mono ${preview.deltaStroops > 0n ? 'text-danger' : 'text-success'}`}
+                >
+                  ({preview.deltaStroops > 0n ? '+' : '−'}
+                  {stroopsToXlm(
+                    (preview.deltaStroops < 0n
+                      ? -preview.deltaStroops
+                      : preview.deltaStroops
+                    ).toString()
+                  )}{' '}
+                  XLM)
+                </span>
+              </>
+            ) : (
+              ' (no change)'
+            )}
+          </>
+        ) : (
+          'Enter an annual duty estimate to preview the new requirement.'
+        )}
+      </p>
     </div>
   );
 }
