@@ -8,9 +8,9 @@ extern crate std;
 
 use super::*;
 use soroban_sdk::{
-    xdr::ToXdr,
     testutils::{Address as _, Ledger},
     token::{StellarAssetClient, TokenClient},
+    xdr::ToXdr,
     Env, IntoVal,
 };
 use std::time::Instant;
@@ -898,7 +898,10 @@ fn non_admin_cannot_transfer_admin() {
     client.transfer_admin(&intruder);
 }
 
-fn benchmark_importer_batch(count: usize, action: impl Fn(&Setup<'_>, &Address)) -> (u128, u64, u64) {
+fn benchmark_importer_batch(
+    count: usize,
+    action: impl Fn(&Setup<'_>, &Address),
+) -> (u128, u64, u64) {
     let s = setup();
     let mut importers = std::vec::Vec::with_capacity(count);
     for _ in 0..count {
@@ -910,8 +913,7 @@ fn benchmark_importer_batch(count: usize, action: impl Fn(&Setup<'_>, &Address))
             .register_importer(importer, &(10_000 + i as u64), &100_000_0000000);
         s.client
             .deposit_collateral(importer, &s.funder, &10_000_0000);
-        s.client
-            .deposit_reserve(importer, &s.funder, &10_000_0000);
+        s.client.deposit_reserve(importer, &s.funder, &10_000_0000);
     }
 
     let mut budget = s.env.cost_estimate().budget();
@@ -953,8 +955,11 @@ fn benchmark_bulk_enforcement_paths() {
     let mut history_stats = std::vec::Vec::new();
     for entry_count in [10usize, 100, 1000] {
         let importer = Address::generate(&s.env);
-        s.client
-            .register_importer(&importer, &((entry_count as u64) + 20_000), &100_000_0000000);
+        s.client.register_importer(
+            &importer,
+            &((entry_count as u64) + 20_000),
+            &100_000_0000000,
+        );
         for i in 0..entry_count {
             s.env.ledger().with_mut(|li| {
                 li.timestamp = 1_000_000 + i as u64;
@@ -1008,8 +1013,7 @@ fn benchmark_bulk_enforcement_paths() {
         budget.reset_unlimited();
         budget.reset_tracker();
         let start = Instant::now();
-        s.client
-            .update_oracle_signers(&new_signers, &approvals);
+        s.client.update_oracle_signers(&new_signers, &approvals);
         let elapsed_ns = start.elapsed().as_nanos();
         signer_stats.push((
             signer_count as u64,
@@ -1021,7 +1025,9 @@ fn benchmark_bulk_enforcement_paths() {
 
     std::println!(
         "clawback: 1={:?} 100={:?} 1000={:?}",
-        clawback_one, clawback_100, clawback_1000
+        clawback_one,
+        clawback_100,
+        clawback_1000
     );
     std::println!("stale: 100={:?} 1000={:?}", stale_100, stale_1000);
     std::println!("history: {:?}", history_stats);
@@ -1030,4 +1036,59 @@ fn benchmark_bulk_enforcement_paths() {
     assert!(clawback_100.0 >= clawback_one.0);
     assert!(clawback_1000.0 >= clawback_100.0);
     assert!(stale_1000.0 >= stale_100.0);
+}
+
+#[test]
+fn benchmark_register_importer_scaling() {
+    let s = setup();
+    let target_sizes = [100, 1000, 10000];
+    let mut current_importers_count = 0;
+
+    for size in target_sizes {
+        s.env.as_contract(&s.contract_id, || {
+            while current_importers_count < size {
+                let importer = Address::generate(&s.env);
+                let key = DataKey::Account(importer);
+                let account = Account {
+                    bond_id: current_importers_count as u64 + 50_000,
+                    collateral_balance: 0,
+                    required_collateral: 100_000_0000000,
+                    reserve_balance: 0,
+                    yield_accrued: 0,
+                    is_clawbacked: false,
+                    collateral_last_updated: s.env.ledger().timestamp(),
+                    collateral_history: soroban_sdk::Vec::new(&s.env),
+                    dispute_expires_at: 0,
+                    pre_dispute_required: 100_000_0000000,
+                    dispute_raised: false,
+                    oracle_last_updated: 0,
+                };
+                s.env.storage().persistent().set(&key, &account);
+                current_importers_count += 1;
+            }
+        });
+
+        let next_importer = Address::generate(&s.env);
+        let mut budget = s.env.cost_estimate().budget();
+        budget.reset_unlimited();
+        budget.reset_tracker();
+
+        s.client.register_importer(
+            &next_importer,
+            &((current_importers_count as u64) + 50_000),
+            &100_000_0000000,
+        );
+
+        let cpu = budget.cpu_instruction_cost();
+        let mem = budget.memory_bytes_cost();
+
+        std::println!(
+            "REGISTER_IMPORTER_BENCHMARK: size={}, cpu={}, mem={}",
+            size,
+            cpu,
+            mem
+        );
+
+        current_importers_count += 1;
+    }
 }

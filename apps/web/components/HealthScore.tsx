@@ -55,15 +55,15 @@ export function HealthScore({
       {showInfo && (
         <div className="mt-3 text-xs text-muted bg-background/50 border border-border rounded-md p-3 space-y-2">
           <p className="font-semibold text-foreground">How Health Score is Calculated</p>
-          <p>
-            The score (0–100) is a weighted combination of your collateral ratios:
-          </p>
+          <p>The score (0–100) is a weighted combination of your collateral ratios:</p>
           <ul className="list-disc list-inside space-y-0.5">
             <li>
-              <span className="font-medium text-foreground">70% Coverage Ratio</span>: Collateral ÷ Required (capped at 100%)
+              <span className="font-medium text-foreground">70% Coverage Ratio</span>: Collateral ÷
+              Required (capped at 100%)
             </li>
             <li>
-              <span className="font-medium text-foreground">30% Reserve Ratio</span>: Reserve ÷ Collateral (capped at 100%)
+              <span className="font-medium text-foreground">30% Reserve Ratio</span>: Reserve ÷
+              Collateral (capped at 100%)
             </li>
           </ul>
           <p className="font-semibold text-foreground pt-1">Grade Thresholds</p>
@@ -91,24 +91,58 @@ export function HealthScore({
             {grade.charAt(0).toUpperCase() + grade.slice(1)}
           </p>
         </div>
-        <div className="text-right text-xs text-muted">
-          <p>Coverage: {coverageRatio.toFixed(0)}%</p>
-          <p>Reserve: {reserveRatio.toFixed(0)}%</p>
+        <div className="text-right text-xs text-muted space-y-0.5">
+          <p>
+            Coverage (70% weight):{' '}
+            <span className="font-semibold text-foreground">{coverageRatio.toFixed(0)}%</span>
+          </p>
+          <p>
+            Reserve (30% weight):{' '}
+            <span className="font-semibold text-foreground">{reserveRatio.toFixed(0)}%</span>
+          </p>
         </div>
       </div>
-      <div className="mt-3 h-2 bg-border rounded overflow-hidden">
-        <div
-          className={`h-full transition-all ${
-            healthScore >= 80
-              ? 'bg-success'
-              : healthScore >= 60
-                ? 'bg-accent'
-                : healthScore >= 40
-                  ? 'bg-yellow-500'
-                  : 'bg-danger'
-          }`}
-          style={{ width: `${healthScore}%` }}
-        />
+      <div className="mt-3 space-y-3">
+        <div className="h-2 bg-border rounded overflow-hidden">
+          <div
+            className={`h-full transition-all ${
+              healthScore >= 80
+                ? 'bg-success'
+                : healthScore >= 60
+                  ? 'bg-accent'
+                  : healthScore >= 40
+                    ? 'bg-yellow-500'
+                    : 'bg-danger'
+            }`}
+            style={{ width: `${healthScore}%` }}
+          />
+        </div>
+
+        {/* Component breakdown showing contribution to the score */}
+        <div className="grid grid-cols-2 gap-3 text-[10px] text-muted">
+          <div>
+            <div className="flex justify-between mb-1">
+              <span>Coverage Contribution</span>
+              <span className="font-semibold text-foreground">
+                {(coverageScore * 0.7).toFixed(1)} pts
+              </span>
+            </div>
+            <div className="h-1 bg-border rounded overflow-hidden">
+              <div className="h-full bg-success/80" style={{ width: `${coverageScore}%` }} />
+            </div>
+          </div>
+          <div>
+            <div className="flex justify-between mb-1">
+              <span>Reserve Contribution</span>
+              <span className="font-semibold text-foreground">
+                {(reserveScore * 0.3).toFixed(1)} pts
+              </span>
+            </div>
+            <div className="h-1 bg-border rounded overflow-hidden">
+              <div className="h-full bg-accent/80" style={{ width: `${reserveScore}%` }} />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
