@@ -22,6 +22,7 @@ import { Nav } from '@/components/Nav';
 import { HealthScore } from '@/components/HealthScore';
 import { DepositWizard } from '@/components/DepositWizard';
 import { BondTimeline } from '@/components/BondTimeline';
+import { Spinner } from '@/components/Spinner';
 import {
   api,
   ApiError,
@@ -786,9 +787,16 @@ function RegisterImporter({
         <button
           type="submit"
           disabled={busy}
-          className="rounded-md bg-accent px-4 py-2.5 text-accent-foreground hover:opacity-90 disabled:opacity-50 text-sm font-medium"
+          className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2.5 text-accent-foreground hover:opacity-90 disabled:opacity-50 text-sm font-medium"
         >
-          {busy ? 'Registering on Stellar testnet…' : 'Register importer'}
+          {busy ? (
+            <>
+              <Spinner />
+              Registering on Stellar testnet…
+            </>
+          ) : (
+            'Register importer'
+          )}
         </button>
       </form>
     </main>
