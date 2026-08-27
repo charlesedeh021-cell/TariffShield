@@ -161,15 +161,21 @@ Open http://localhost:3000.
 The pre-deployed contract works out of the box — your `.env.example` already points at `CBLASRVG7NRAFP2CDPVSF4WTJBKC6L4FKT2XHR3OH7CLICUBPVQ4PBBF`. To deploy your own:
 
 ```bash
+# Generate and fund a key (one-time)
 stellar keys generate --fund my-admin --network testnet
-stellar contract deploy \
-  --network testnet \
-  --source-account my-admin \
-  --wasm target/wasm32-unknown-unknown/release/tariff_shield.optimized.wasm
-# then `stellar contract invoke <C…> -- initialize --admin <G…> --surety <G…> --token <SAC…>`
+
+# Build the contract first
+npm run contract:build
+
+# Deploy + initialize in one step (defaults: --network testnet --source my-admin)
+npm run contract:deploy -- \
+  --surety <SURETY_PUBLIC_KEY> \
+  --token <TOKEN_CONTRACT_ID>
 ```
 
-Replace `TARIFF_SHIELD_CONTRACT_ID` in your `.env`.
+The script prints the new contract ID at the end — replace `TARIFF_SHIELD_CONTRACT_ID` in your `.env` with it.
+
+You can also pass `--network`, `--source`, `--wasm`, and `--admin` flags, or use `--skip-init` to deploy the wasm without running `initialize`. Run `npx tsx scripts/deploy-contracts.ts --help` for the full option list.
 
 ## Verification flow
 
