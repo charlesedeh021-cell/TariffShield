@@ -742,8 +742,10 @@ function WithdrawCard({
   onDone: () => Promise<void>;
   setError: (e: string | null) => void;
 }) {
-  const [xlm, setXlm] = useState(stroopsToXlm(maxStroops));
+  const maxXlm = stroopsToXlm(maxStroops);
+  const [xlm, setXlm] = useState(maxXlm);
   const [busy, setBusy] = useState(false);
+  const atMax = xlm === maxXlm;
   async function go() {
     setBusy(true);
     setError(null);
@@ -759,21 +761,35 @@ function WithdrawCard({
     }
   }
   return (
-    <div className="rounded-md border border-border bg-card px-3 py-2 flex items-center gap-2">
-      <input
-        type="number"
-        step="0.01"
-        value={xlm}
-        onChange={(e) => setXlm(e.target.value)}
-        className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
-      />
-      <button
-        onClick={go}
-        disabled={busy}
-        className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-card disabled:opacity-50"
-      >
-        {busy ? '…' : 'Withdraw excess'}
-      </button>
+    <div className="rounded-md border border-border bg-card px-3 py-2">
+      <div className="flex items-center justify-between text-xs text-muted mb-1.5">
+        <span>Amount to withdraw (XLM)</span>
+        <span className="font-mono">Max {maxXlm}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          step="0.01"
+          value={xlm}
+          onChange={(e) => setXlm(e.target.value)}
+          className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:border-accent focus:outline-none"
+        />
+        <button
+          type="button"
+          onClick={() => setXlm(maxXlm)}
+          disabled={busy || atMax}
+          className="rounded-md border border-border px-2 py-1.5 text-xs hover:bg-background disabled:opacity-50"
+        >
+          Max
+        </button>
+        <button
+          onClick={go}
+          disabled={busy}
+          className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-card disabled:opacity-50"
+        >
+          {busy ? '…' : 'Withdraw excess'}
+        </button>
+      </div>
     </div>
   );
 }
