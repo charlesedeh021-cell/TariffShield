@@ -24,7 +24,7 @@ TariffShield spans three runtimes — Rust/Soroban, Node.js/Express, and Next.js
 |----------|----------|---------------------|--------|
 | Soroban contract unit tests | `contracts/tariff-shield/src/test.rs` | `cargo test` + `soroban-sdk` testutils | Active (42 tests) |
 | API integration tests | `apps/api/src/__tests__/` | supertest + Jest or Vitest (to be added) | Active — minimal (2 tests in `bonds.test.ts`) |
-| SDK unit tests | `packages/sdk/src/__tests__/` | Jest or Vitest + fetch mock | Not yet implemented |
+| SDK compatibility tests | `packages/sdk/src/compatibility.test.ts` | `tsx --test` (Node built-in test runner) | Active — run with `npm run test --workspace=packages/sdk` |
 | E2E tests | `apps/web/e2e/` | Playwright v1.49, Desktop Chrome | Active (3 specs) |
 
 > **Keeping the contract test count accurate:** the "(N tests)" figure above is a snapshot, not a generated value, so it drifts whenever `test.rs` gains or loses `#[test]` functions. Verify it before relying on it:
@@ -41,7 +41,7 @@ TariffShield spans three runtimes — Rust/Soroban, Node.js/Express, and Next.js
 |---------|------------------|-------------------|-----------------|-------------|---------------|
 | `contracts/tariff-shield` | `cargo test` | Rust `assert_eq!` / `assert!` | Soroban test env (in-process simulation) | N/A | `cargo llvm-cov` (not yet configured) |
 | `apps/api` | `node:test` (built-in) | `node:assert/strict` | None — direct `pg` `Pool` queries, no HTTP layer | Docker PostgreSQL (matches production schema) | Not yet configured |
-| `packages/sdk` | Jest or Vitest (pending) | Built-in matchers | `msw` or `jest.fn()` mocking `rpc.Server` | N/A | `c8` or `jest --coverage` |
+| `packages/sdk` | `tsx --test` (Node built-in test runner) | Node built-in `assert` | N/A — compatibility tests exercise version detection logic | N/A | Not yet configured |
 | `apps/web` | Playwright v1.49 | Playwright assertions | Real API on localhost | N/A | Playwright trace files |
 
 ---
@@ -86,9 +86,12 @@ npm run test:integration
 npm run test:integration --workspace=apps/api
 ```
 
-### SDK unit tests (when implemented)
+### SDK tests
 ```bash
-# From packages/sdk/
+# From repo root
+npm run test --workspace=packages/sdk
+
+# Equivalent (from packages/sdk/)
 npm test
 ```
 

@@ -1,0 +1,19 @@
+{
+  "name": "@tariffshield/api-types",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "description": "Generated TypeScript types from the TariffShield OpenAPI spec (docs/security/openapi.yaml). Re-generate with: npm run generate:types (from repo root).",
+  "scripts": {
+    "generate": "openapi-typescript ../../docs/security/openapi.yaml -o index.ts"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.0.0",
+    "typescript": "^5.7.2"
+  }
+}
